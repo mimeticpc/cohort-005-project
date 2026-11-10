@@ -37,6 +37,12 @@ export enum RefundRequestStatus {
   Declined = "declined",
 }
 
+export enum RefundStatus {
+  Pending = "pending",
+  Issued = "issued",
+  Failed = "failed",
+}
+
 export enum TeamMemberRole {
   Admin = "admin",
   Member = "member",
@@ -132,6 +138,9 @@ export const enrollments = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
     completedAt: text("completed_at"),
+    // Set when the Enrollment Ends (an Approved Refund Request). An Ended
+    // Enrollment is kept as history and never reopened.
+    endedAt: text("ended_at"),
   },
   (table) => [index("enrollments_course_idx").on(table.courseId)]
 );
@@ -242,8 +251,6 @@ export const refundRequests = sqliteTable(
       .default(RefundRequestStatus.Open),
     // The learner's own words, in the box on the course page.
     reason: text("reason").notNull(),
-    // Null until an Admin approves — a declined Refund Request refunds nothing.
-    amountRefunded: integer("amount_refunded"),
     requestedAt: text("requested_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -251,6 +258,29 @@ export const refundRequests = sqliteTable(
     resolvedByUserId: integer("resolved_by_user_id").references(() => users.id),
   },
   (table) => [index("refund_requests_purchase_idx").on(table.purchaseId)]
+);
+
+// The money side of an Approved Refund Request. Exactly one per Approved
+// Refund Request, created at approval, always for the full amount paid.
+export const refunds = sqliteTable(
+  "refunds",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    refundRequestId: integer("refund_request_id")
+      .notNull()
+      .references(() => refundRequests.id),
+    amount: integer("amount").notNull(),
+    status: text("status")
+      .notNull()
+      .$type<RefundStatus>()
+      .default(RefundStatus.Pending),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("refunds_refund_request_unique").on(table.refundRequestId),
+  ]
 );
 
 export const teams = sqliteTable("teams", {

@@ -8,6 +8,17 @@ An online course platform where Learners buy and work through Courses.
 A person who buys and takes Courses. Provisional term; may be revisited.
 _Avoid_: Student
 
+**Admin**:
+A person who runs the platform, including the people who Resolve Refund Requests. Not the Admin of a Team.
+_Avoid_: Support member, Staff, Platform admin
+
+**Purchase**:
+A Learner's payment for a Course. A Purchase is a permanent record: a Refund never changes or removes it.
+
+**Enrollment**:
+A Learner's access to a Course. It is Active until it is Ended; an Approved Refund Request Ends it at the moment of approval. An Ended Enrollment stays on record and is never reopened: buying the Course again makes a new Purchase and a new Enrollment. The Learner's progress, ratings and comments survive an Ended Enrollment.
+_Avoid_: Access, Seat
+
 ### Refunds
 
 **Refund Request**:
@@ -15,7 +26,7 @@ A Learner's ask to get back what they paid for a Purchase. It is Open until a pl
 _Avoid_: Cancellation, Reversal, Chargeback
 
 **Refund**:
-The return of a Learner's money for a Purchase. Every Approved Refund Request has exactly one Refund, which comes into existence at approval. It is always the full amount the Learner paid, never the Course's list price and never a part of it.
+The return of a Learner's money for a Purchase. Every Approved Refund Request has exactly one Refund, which comes into existence at approval. It is always the full amount the Learner paid, never the Course's list price and never a part of it. A Learner gets at most one Refund per Course, across all their Purchases of it.
 _Avoid_: Cancellation, Reversal, Chargeback
 
 ### Refund Request states

@@ -21,7 +21,7 @@ import {
   LessonProgressStatus,
   RefundRequestStatus,
 } from "~/db/schema";
-import { eq, and, or, sql, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, or, sql, inArray, isNotNull, isNull } from "drizzle-orm";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -52,10 +52,10 @@ import { resolveCountry } from "~/lib/country.server";
 import {
   calculatePppPrice,
   getCountryTierInfo,
-  getDiscountForCountry,
 } from "~/lib/ppp";
 import { parseFormData } from "~/lib/validation";
 import { MAX_RATING, MIN_RATING } from "~/lib/ratings";
+import { findApprovedRefundRequestForCourse } from "~/lib/refunds.server";
 import { StarRating, StarRatingInput } from "~/components/star-rating";
 
 function getCourseBySlug(slug: string) {
@@ -142,7 +142,11 @@ function isUserEnrolled(userId: number, courseId: number) {
     .select()
     .from(enrollments)
     .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+      and(
+        eq(enrollments.userId, userId),
+        eq(enrollments.courseId, courseId),
+        isNull(enrollments.endedAt)
+      )
     )
     .get();
   return !!enrollment;
@@ -452,6 +456,7 @@ function getRefundOffer(
 
   if (!purchase) return null;
   if (getOpenRefundRequest(purchase.id)) return null;
+  if (findApprovedRefundRequestForCourse(db, userId, course.id)) return null;
 
   const purchasedDay = asDayString(new Date(purchase.createdAt));
   const windowEnd = new Date(purchase.createdAt);
@@ -486,10 +491,8 @@ function getRefundOffer(
 
   if (claimedSeat) return null;
 
-  // A purchasing-power price is given back at the price that was paid, not at
-  // the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const amount = pppDiscount > 0 ? purchase.amountPaid : course.price;
+  // A Refund is always the full amount paid — never the list price.
+  const amount = purchase.amountPaid;
 
   return { amount, lastDayInWindow };
 }
@@ -527,9 +530,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
   let refundOffer: { amount: number; lastDayInWindow: string } | null = null;
+  let refundedAt: string | null = null;
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
+
+    // One Refund per Course: tell a refunded Learner before they buy again.
+    const pastRefund = findApprovedRefundRequestForCourse(
+      db,
+      currentUserId,
+      course.id
+    );
+    refundedAt = pastRefund?.resolvedAt ?? null;
 
     if (enrolled) {
       refundOffer = getRefundOffer(currentUserId, {
@@ -580,6 +592,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     ratingSummary,
     userRating,
     refundOffer,
+    refundedAt,
   };
 }
 
@@ -681,6 +694,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     ratingSummary,
     userRating,
     refundOffer,
+    refundedAt,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -924,7 +938,16 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                   )}
                 </>
               ) : (
-                enrollButton
+                <>
+                  {refundedAt && (
+                    <p className="rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground">
+                      You were refunded for this course on{" "}
+                      {new Date(refundedAt).toLocaleDateString()}. Refunds are
+                      limited to one per course.
+                    </p>
+                  )}
+                  {enrollButton}
+                </>
               )}
               <div className="space-y-2 pt-2 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
