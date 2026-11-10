@@ -76,7 +76,8 @@ async function seed() {
     DROP TABLE IF EXISTS coupons;
     DROP TABLE IF EXISTS team_members;
     DROP TABLE IF EXISTS teams;
-    DROP TABLE IF EXISTS refunds;
+    DROP TABLE IF EXISTS refund_requests;
+    DROP TABLE IF EXISTS refunds; -- pre-0010 name, left by older databases
     DROP TABLE IF EXISTS purchases;
     DROP TABLE IF EXISTS enrollments;
     DROP TABLE IF EXISTS lessons;
@@ -2725,7 +2726,7 @@ This course is still in draft while the cluster examples are rewritten against t
 
   // ─── Liam's Purchase ───
   // One learner part-way through a recent purchase, with no request raised, so
-  // the course page offers "Cancel my purchase". The dates count back from
+  // the course page offers "Request a refund". The dates count back from
   // today, so the fourteen-day refund window is still open whenever you seed.
 
   const liam = studentByEmail("liam@example.com");
