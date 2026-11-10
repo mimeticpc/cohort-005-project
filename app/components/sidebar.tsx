@@ -6,6 +6,7 @@ import { UserAvatar } from "~/components/user-avatar";
 import {
   BookOpen,
   ChartColumn,
+  ReceiptText,
   LayoutDashboard,
   GraduationCap,
   MessageSquare,
@@ -96,6 +97,12 @@ const navItems: NavItem[] = [
     label: "Categories",
     to: "/admin/categories",
     icon: <Tag className="size-4" />,
+    roles: [UserRole.Admin],
+  },
+  {
+    label: "Refund Requests",
+    to: "/admin/refund-requests",
+    icon: <ReceiptText className="size-4" />,
     roles: [UserRole.Admin],
   },
 ];

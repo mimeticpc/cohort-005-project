@@ -35,6 +35,7 @@ function getCourseEnrolledStudents(courseId: number) {
       userId: enrollments.userId,
       enrolledAt: enrollments.enrolledAt,
       completedAt: enrollments.completedAt,
+      endedAt: enrollments.endedAt,
     })
     .from(enrollments)
     .where(eq(enrollments.courseId, courseId))
@@ -240,11 +241,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     });
 
     return {
+      enrollmentId: enrollment.enrollmentId,
       userId: enrollment.userId,
       name: studentUser?.name ?? "Unknown",
       email: studentUser?.email ?? "",
       enrolledAt: enrollment.enrolledAt,
       completedAt: enrollment.completedAt,
+      endedAt: enrollment.endedAt,
       progress,
       quizScores,
     };
@@ -385,7 +388,7 @@ export default function InstructorStudentRoster({
 
                     return (
                       <tr
-                        key={student.userId}
+                        key={student.enrollmentId}
                         className="border-b border-border last:border-0"
                       >
                         <td className="px-4 py-3">
@@ -405,7 +408,16 @@ export default function InstructorStudentRoster({
                           {progressBar(student.progress)}
                         </td>
                         <td className="px-4 py-3">
-                          {student.completedAt ? (
+                          {student.endedAt ? (
+                            <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
+                              Ended{" "}
+                              {new Date(student.endedAt).toLocaleDateString(
+                                "en-US",
+                                { month: "short", day: "numeric" }
+                              )}{" "}
+                              (refunded)
+                            </span>
+                          ) : student.completedAt ? (
                             <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
                               Completed
                             </span>

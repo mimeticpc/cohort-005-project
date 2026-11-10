@@ -10,19 +10,37 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
-import {
-  UserRole,
-  RefundRequestStatus,
-  users,
-  courses,
-  purchases,
-  refundRequests,
-} from "~/db/schema";
+import { UserRole, RefundRequestStatus, RefundStatus, users } from "~/db/schema";
+import { listRefundRequestsForLearner } from "~/lib/refunds.server";
 import { AlertTriangle } from "lucide-react";
 import { data, isRouteErrorResponse, Link } from "react-router";
 import { db } from "~/db";
-import { and, eq } from "drizzle-orm";
-import { formatPrice } from "~/lib/utils";
+import { eq } from "drizzle-orm";
+import { cn, formatPrice } from "~/lib/utils";
+
+const refundFilterSchema = z.object({
+  refundStatus: z.nativeEnum(RefundRequestStatus).optional().catch(undefined),
+});
+
+const REFUND_REQUEST_LABELS: Record<RefundRequestStatus, string> = {
+  [RefundRequestStatus.Open]: "Open",
+  [RefundRequestStatus.Approved]: "Approved",
+  [RefundRequestStatus.Declined]: "Declined",
+};
+
+const REFUND_REQUEST_BADGES: Record<RefundRequestStatus, string> = {
+  [RefundRequestStatus.Open]:
+    "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  [RefundRequestStatus.Approved]:
+    "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  [RefundRequestStatus.Declined]: "bg-muted text-muted-foreground",
+};
+
+const REFUND_LABELS: Record<RefundStatus, string> = {
+  [RefundStatus.Pending]: "Pending — on its way",
+  [RefundStatus.Issued]: "Issued",
+  [RefundStatus.Failed]: "Failed — we will retry",
+};
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
@@ -55,25 +73,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw data("User not found.", { status: 404 });
   }
 
-  const openRefundRequests = db
-    .select({
-      id: refundRequests.id,
-      courseTitle: courses.title,
-      courseSlug: courses.slug,
-      amountPaid: purchases.amountPaid,
-      reason: refundRequests.reason,
-      requestedAt: refundRequests.requestedAt,
-    })
-    .from(refundRequests)
-    .innerJoin(purchases, eq(refundRequests.purchaseId, purchases.id))
-    .innerJoin(courses, eq(purchases.courseId, courses.id))
-    .where(
-      and(
-        eq(purchases.userId, currentUserId),
-        eq(refundRequests.status, RefundRequestStatus.Open)
-      )
-    )
-    .all();
+  const url = new URL(request.url);
+  const { refundStatus } = refundFilterSchema.parse({
+    refundStatus: url.searchParams.get("refundStatus") ?? undefined,
+  });
+  const allRefundRequests = listRefundRequestsForLearner(
+    db,
+    currentUserId,
+    null
+  );
+  const refundRequests = refundStatus
+    ? allRefundRequests.filter((r) => r.status === refundStatus)
+    : allRefundRequests;
 
   return {
     user: {
@@ -83,7 +94,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       bio: currentUser.bio,
       role: currentUser.role,
     },
-    openRefundRequests,
+    refundRequests,
+    refundStatus,
+    hasRefundRequests: allRefundRequests.length > 0,
   };
 }
 
@@ -122,7 +135,8 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, openRefundRequests } = loaderData;
+  const { user, refundRequests, refundStatus, hasRefundRequests } =
+    loaderData;
   const fetcher = useFetcher();
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -209,18 +223,35 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardContent>
       </Card>
 
-      {openRefundRequests.length > 0 && (
+      {hasRefundRequests && (
         <Card className="mt-8 max-w-md">
           <CardHeader>
-            <h2 className="text-lg font-semibold">Open Refund Requests</h2>
-            <p className="text-sm text-muted-foreground">
-              {openRefundRequests.length === 1
-                ? "One Refund Request is waiting on us."
-                : `${openRefundRequests.length} Refund Requests are waiting on us.`}
-            </p>
+            <h2 className="text-lg font-semibold">Refund Requests</h2>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {[null, ...Object.values(RefundRequestStatus)].map((option) => (
+                <Link
+                  key={option ?? "all"}
+                  to={option ? `?refundStatus=${option}` : "?"}
+                  preventScrollReset
+                  className={cn(
+                    "rounded-full border px-3 py-0.5 text-xs",
+                    option === refundStatus
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {option ? REFUND_REQUEST_LABELS[option] : "All"}
+                </Link>
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {openRefundRequests.map((refundRequest) => (
+            {refundRequests.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                None in this state.
+              </p>
+            )}
+            {refundRequests.map((refundRequest) => (
               <div key={refundRequest.id} className="rounded-md border p-3">
                 <div className="flex items-start justify-between gap-3">
                   <Link
@@ -229,14 +260,26 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
                   >
                     {refundRequest.courseTitle}
                   </Link>
-                  <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                    Open
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium",
+                      REFUND_REQUEST_BADGES[refundRequest.status]
+                    )}
+                  >
+                    {REFUND_REQUEST_LABELS[refundRequest.status]}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {formatPrice(refundRequest.amountPaid)} · raised{" "}
                   {new Date(refundRequest.requestedAt).toLocaleDateString()}
+                  {refundRequest.resolvedAt &&
+                    ` · resolved ${new Date(refundRequest.resolvedAt).toLocaleDateString()}`}
                 </p>
+                {refundRequest.refundStatus && (
+                  <p className="mt-1 text-sm">
+                    Refund: {REFUND_LABELS[refundRequest.refundStatus]}
+                  </p>
+                )}
                 <p className="mt-2 text-sm">{refundRequest.reason}</p>
               </div>
             ))}

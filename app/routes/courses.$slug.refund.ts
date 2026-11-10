@@ -16,7 +16,7 @@ import {
 } from "~/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { parseFormData, parseParams } from "~/lib/validation";
-import { getDiscountForCountry } from "~/lib/ppp";
+import { findApprovedRefundRequestForCourse } from "~/lib/refunds.server";
 import { formatPrice } from "~/lib/utils";
 
 const REFUND_WINDOW_DAYS = 14;
@@ -141,6 +141,19 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("You have not bought this course.", { status: 403 });
   }
 
+  const pastRefund = findApprovedRefundRequestForCourse(
+    db,
+    currentUserId,
+    course.id
+  );
+
+  if (pastRefund) {
+    throw data(
+      "You have already been refunded for this course. Refunds are limited to one per course.",
+      { status: 403 }
+    );
+  }
+
   if (getOpenRefundRequest(purchase.id)) {
     throw data("You already have an open Refund Request on this purchase.", {
       status: 409,
@@ -200,10 +213,8 @@ export async function action({ params, request }: Route.ActionArgs) {
     });
   }
 
-  // A purchase made at a purchasing-power price is given back at that price,
-  // not at the list price of the course.
-  const pppDiscount = getDiscountForCountry(purchase.country);
-  const refundableAmount = pppDiscount > 0 ? purchase.amountPaid : course.price;
+  // A Refund is always the full amount paid — never the list price.
+  const refundableAmount = purchase.amountPaid;
 
   const formData = await request.formData();
   const parsed = parseFormData(formData, refundActionSchema);

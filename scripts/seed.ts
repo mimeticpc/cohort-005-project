@@ -1,5 +1,14 @@
 import Database from "better-sqlite3";
-import { eq, gte, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  isNotNull,
+  isNull,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -12,6 +21,8 @@ import {
   LessonProgressStatus,
   QuestionType,
   TeamMemberRole,
+  RefundRequestStatus,
+  RefundStatus,
 } from "../app/db/schema";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -76,8 +87,8 @@ async function seed() {
     DROP TABLE IF EXISTS coupons;
     DROP TABLE IF EXISTS team_members;
     DROP TABLE IF EXISTS teams;
+    DROP TABLE IF EXISTS refunds;
     DROP TABLE IF EXISTS refund_requests;
-    DROP TABLE IF EXISTS refunds; -- pre-0010 name, left by older databases
     DROP TABLE IF EXISTS purchases;
     DROP TABLE IF EXISTS enrollments;
     DROP TABLE IF EXISTS lessons;
@@ -2773,6 +2784,78 @@ This course is still in draft while the cluster examples are rewritten against t
     })
     .run();
 
+  // ─── Refund Requests ───
+  // Two Open Refund Requests for the Admin queue, and one Approved one whose
+  // Refund is still Pending and whose Enrollment has Ended. Taken from recent
+  // individual Purchases (no team seats) of Learners other than Liam.
+
+  const refundCandidates = db
+    .select({
+      purchaseId: schema.purchases.id,
+      userId: schema.purchases.userId,
+      courseId: schema.purchases.courseId,
+      amountPaid: schema.purchases.amountPaid,
+    })
+    .from(schema.purchases)
+    .innerJoin(
+      schema.enrollments,
+      and(
+        eq(schema.enrollments.userId, schema.purchases.userId),
+        eq(schema.enrollments.courseId, schema.purchases.courseId)
+      )
+    )
+    .leftJoin(
+      schema.coupons,
+      eq(schema.coupons.purchaseId, schema.purchases.id)
+    )
+    .where(and(isNull(schema.coupons.id), sql`${schema.purchases.userId} != ${liam.id}`))
+    .groupBy(schema.purchases.userId)
+    .orderBy(desc(schema.purchases.createdAt))
+    .limit(3)
+    .all();
+
+  const refundReasons = [
+    "The course moves faster than I expected and I can't keep up.",
+    "I bought the wrong course — I meant to get the advanced one.",
+    "Not what I was looking for, the examples don't match my stack.",
+  ];
+
+  refundCandidates.forEach((candidate, i) => {
+    const approved = i === 2;
+    const request = db
+      .insert(schema.refundRequests)
+      .values({
+        purchaseId: candidate.purchaseId,
+        status: approved ? RefundRequestStatus.Approved : RefundRequestStatus.Open,
+        reason: refundReasons[i],
+        requestedAt: daysAgo(5 - i),
+        resolvedAt: approved ? daysAgo(1) : null,
+        resolvedByUserId: approved ? admin.id : null,
+      })
+      .returning()
+      .get();
+
+    if (approved) {
+      db.insert(schema.refunds)
+        .values({
+          refundRequestId: request.id,
+          amount: candidate.amountPaid,
+          status: RefundStatus.Pending,
+          createdAt: daysAgo(1),
+        })
+        .run();
+      db.update(schema.enrollments)
+        .set({ endedAt: daysAgo(1) })
+        .where(
+          and(
+            eq(schema.enrollments.userId, candidate.userId),
+            eq(schema.enrollments.courseId, candidate.courseId)
+          )
+        )
+        .run();
+    }
+  });
+
   // ─── Flush watch events ───
   // Batched: the heartbeat makes these by far the largest table, and one
   // statement per row would dominate the seed's runtime.
@@ -2812,7 +2895,12 @@ This course is still in draft while the cluster examples are rewritten against t
   console.log(
     `  Quizzes: ${countRows(schema.quizzes)}, attempts: ${countRows(schema.quizAttempts)}`
   );
-  console.log(`  Enrollments: ${countRows(schema.enrollments)}`);
+  console.log(
+    `  Enrollments: ${countRows(schema.enrollments)} (${countRows(schema.enrollments, isNotNull(schema.enrollments.endedAt))} ended)`
+  );
+  console.log(
+    `  Refund Requests: ${countRows(schema.refundRequests)} (${countRows(schema.refundRequests, eq(schema.refundRequests.status, RefundRequestStatus.Open))} open), refunds: ${countRows(schema.refunds)}`
+  );
   console.log(`  Course ratings: ${countRows(schema.courseRatings)}`);
   console.log(`  Lesson comments: ${countRows(schema.comments)}`);
   console.log(
