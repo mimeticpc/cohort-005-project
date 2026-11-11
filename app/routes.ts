@@ -48,6 +48,8 @@ export default [
     route("team", "routes/team.tsx"),
     route("redeem/:code", "routes/redeem.$code.tsx"),
   ]),
+  // PROTOTYPE, throwaway (#51). Never merge.
+  route("prototype/notification-email", "routes/prototype.notification-email.tsx"),
   route("signup", "routes/signup.tsx"),
   route("login", "routes/login.tsx"),
   route("api/switch-user", "routes/api.switch-user.ts"),
