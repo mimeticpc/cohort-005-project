@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isLapsed } from "./enrollments";
+import { hasEndedEnrollment } from "./enrollments";
 
-describe("isLapsed", () => {
-  it("is false while the learner still has a place on the course", () => {
-    expect(isLapsed({ enrollmentId: 12 })).toBe(false);
+describe("hasEndedEnrollment", () => {
+  it("is false while the Student's Enrollment is active", () => {
+    expect(hasEndedEnrollment({ enrollmentId: 12 })).toBe(false);
   });
 
-  it("is true once the learner's place has been taken away", () => {
-    expect(isLapsed({ enrollmentId: null })).toBe(true);
+  it("is true once the Student's Enrollment has ended", () => {
+    expect(hasEndedEnrollment({ enrollmentId: null })).toBe(true);
   });
 });
