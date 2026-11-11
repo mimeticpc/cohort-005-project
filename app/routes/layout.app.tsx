@@ -3,6 +3,22 @@ import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
+// PROTOTYPE (#47): Notification Feed variants
+import { getFeedConfig } from "~/lib/notification-feed-prototype.server";
+import {
+  FeedProvider,
+  SeedButton,
+  VariantABell,
+  VariantBNavItem,
+  VariantCNavItem,
+} from "~/components/notification-feed-prototype";
+import { PrototypeSwitcher, usePrototypeVariant } from "~/components/prototype-switcher";
+
+const FEED_VARIANTS = [
+  { key: "A", name: "Bell popover" },
+  { key: "B", name: "Drawer" },
+  { key: "C", name: "Inbox page" },
+];
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { eq, and, or, sql, desc } from "drizzle-orm";
@@ -213,6 +229,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    feedConfig: currentUserId ? await getFeedConfig(currentUserId) : null,
   };
 }
 
@@ -225,14 +242,24 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    feedConfig,
   } = loaderData;
+  const variant = usePrototypeVariant(FEED_VARIANTS.map((v) => v.key));
 
-  return (
+  const layout = (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        headerSlot={feedConfig && variant === "A" ? <VariantABell /> : null}
+        navSlot={
+          feedConfig && variant === "B" ? (
+            <VariantBNavItem />
+          ) : feedConfig && variant === "C" ? (
+            <VariantCNavItem />
+          ) : null
+        }
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />
@@ -245,6 +272,20 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countries={countries}
       />
       <Toaster position="bottom-right" richColors closeButton />
+      {feedConfig && (
+        <PrototypeSwitcher variants={FEED_VARIANTS} current={variant}>
+          <SeedButton />
+        </PrototypeSwitcher>
+      )}
     </div>
+  );
+
+  // key: a DevUI user switch re-mounts the feed with the new user's token.
+  return feedConfig ? (
+    <FeedProvider key={feedConfig.knockUserId} config={feedConfig}>
+      {layout}
+    </FeedProvider>
+  ) : (
+    layout
   );
 }
