@@ -12,6 +12,7 @@ Every email Cadence sends goes out through a Knock workflow and Knock's single R
 
 - If Knock is unreachable, buyer-caused email fails too, not only Notifications. How triggers fail and retry covers both kinds.
 - Knock is a hard dependency for all email, and every send counts against Knock's monthly message allowance.
+- Email-only workflows and their templates live in the repo and are pushed by the same sync script as Notifications (ADR 0013). They just have no defaults to sync.
 - An email-only workflow must have no category and no entry in the Notification catalogue. Otherwise it picks up preferences and the preference sync (ADR 0013) can turn it off.
 - Future emails the recipient caused themselves (for example a welcome email on purchase) follow the same pattern: a new email-only workflow, not new mailer code.
 - "A Knock message" doesn't always mean "a Notification". The Notification catalogue in code is the source of truth for which workflows are Notifications.

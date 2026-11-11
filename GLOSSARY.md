@@ -106,7 +106,7 @@ _Avoid_: Watch cap, Viewing threshold
 ### Notifications
 
 **Notification**:
-A message Cadence sends a person to tell them something that concerns them has happened.
+A message Cadence sends a person to tell them that someone else did something that concerns them. Every Notification appears in the person's Notification Feed.
 _Avoid_: Alert, Message, Activity
 
 **Notification Feed**:
