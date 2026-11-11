@@ -198,6 +198,15 @@ const cardRow = (sentence: string, excerpt: string | null, cta: string) => `
   </td>
 </tr></table>`;
 
+// Decided (#51): refund Notifications swap the excerpt box for C's details table.
+const refundRows = (pairs: [string, string][]) =>
+  `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0;border-top:1px solid #e4e4e7">${pairs
+    .map(
+      ([k, v]) =>
+        `<tr><td width="30%" valign="top" style="padding:8px 0;border-bottom:1px solid #e4e4e7;font-size:13px;color:#71717a">${k}</td><td valign="top" style="padding:8px 0;border-bottom:1px solid #e4e4e7;font-size:14px;color:#171717">${v}</td></tr>`
+    )
+    .join("")}</table>`;
+
 const A: Variant = {
   key: "A",
   name: "Feed card",
@@ -240,8 +249,8 @@ const A: Variant = {
       subject: "{{ actor.name }} requested a refund for {{ data.course_title }}",
       preheader: "{{ data.amount }} · {{ data.reason | truncate: 70 }}",
       body: cardRow(
-        `<b>{{ actor.name }}</b> requested a refund for <b>{{ data.course_title }}</b> ({{ data.amount }})`,
-        `{{ data.reason }}`,
+        `<b>{{ actor.name }}</b> requested a refund for <b>{{ data.course_title }}</b>${refundRows([["Amount", "{{ data.amount }}"], ["Purchased", "{{ data.purchased_on }}"], ["Reason", "{{ data.reason }}"]])}`,
+        null,
         "Review"
       ),
     },
@@ -249,8 +258,8 @@ const A: Variant = {
       subject: "Your Refund Request for {{ data.course_title }} was approved",
       preheader: "{{ data.amount }} is on its way back to you.",
       body: cardRow(
-        `Your Refund Request for <b>{{ data.course_title }}</b> was approved`,
-        `{% if data.decision_note %}{{ data.decision_note }}{% endif %}`,
+        `Your Refund Request for <b>{{ data.course_title }}</b> was approved${refundRows([["Amount", "{{ data.amount }}"], ["Purchased", "{{ data.purchased_on }}"], ["Note", "{% if data.decision_note %}{{ data.decision_note }}{% else %}—{% endif %}"]])}`,
+        null,
         "View"
       ),
     },
@@ -258,8 +267,8 @@ const A: Variant = {
       subject: "Your Refund Request for {{ data.course_title }} was declined",
       preheader: "{{ data.decision_note | truncate: 90 }}",
       body: cardRow(
-        `Your Refund Request for <b>{{ data.course_title }}</b> was declined`,
-        `{{ data.decision_note }}`,
+        `Your Refund Request for <b>{{ data.course_title }}</b> was declined${refundRows([["Amount", "{{ data.amount }}"], ["Purchased", "{{ data.purchased_on }}"], ["Note", "{{ data.decision_note }}"]])}<div style="font-size:14px;color:#525252">You can ask again from the course page.</div>`,
+        null,
         "View course"
       ),
     },
