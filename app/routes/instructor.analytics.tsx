@@ -926,7 +926,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     }))
     .sort((a, b) => b.grossCents - a.grossCents);
 
-  // How many people paid, and how many are learning. Deliberately two numbers:
+  // How many people paid, and how many are Students. Deliberately two numbers:
   // one team purchase is a single buyer covering several seats, and someone who
   // redeems a seat enrols without a purchase row of their own.
   const buyerCountRow = db
@@ -1662,7 +1662,7 @@ export default function InstructorAnalytics({
               <StatCard
                 label="Enrolled students"
                 value={audience.studentCount}
-                hint={`Learners with access, seats included.${
+                hint={`Students with an Enrollment, Seats included.${
                   audience.revenuePerStudentCents === null
                     ? ""
                     : ` ${formatMoney(
