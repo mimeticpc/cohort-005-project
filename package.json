@@ -60,6 +60,7 @@
     "@types/youtube": "^0.1.2",
     "ai-hero-cli": "0.12.0",
     "drizzle-kit": "^0.31.4",
+    "liquidjs": "10.30.1",
     "prettier": "^3.8.1",
     "shadcn": "^3.8.4",
     "tailwindcss": "^4.1.13",

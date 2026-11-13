@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schemas.knock.app/cli/partial.json",
+  "name": "Cadence excerpt",
+  "type": "html",
+  "description": "Grey quote box under the email sentence: {% render \"cadence-excerpt\", text: data.excerpt %}",
+  "content@": "content.html"
+}

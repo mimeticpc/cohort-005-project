@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schemas.knock.app/cli/partial.json",
+  "name": "Cadence refund details",
+  "type": "html",
+  "description": "Amount / Purchased / Reason-or-Note table the refund emails show in place of the excerpt: {% render \"cadence-details\", amount: data.amount, purchased_on: data.purchased_on, note_label: \"Reason\", note: data.reason %}. A blank note shows a dash.",
+  "content@": "content.html"
+}

@@ -1,0 +1,61 @@
+{%- comment -%}
+  The one email layout every Cadence email uses (ADR 0015).
+  A workflow's email step supplies:
+    - settings.pre_content: a capture of preview_text, the inbox
+      preheader;
+    - html_body: the card's right column: the sentence, then a details
+      partial (cadence-excerpt or cadence-details), then cadence-cta.
+  The layout adds the wordmark, the card with the actor's initials avatar,
+  and the footer. Needs the environment variables app_url and settings_url.
+{%- endcomment -%}
+{%- assign name_parts = actor.name | split: " " -%}
+{%- assign initials = name_parts.first | slice: 0 -%}
+{%- if name_parts.size > 1 -%}
+  {%- assign last_initial = name_parts.last | slice: 0 -%}
+  {%- assign initials = initials | append: last_initial -%}
+{%- endif -%}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+  </head>
+  <body style="margin:0;padding:0;background:#f4f4f5;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+    <div data-preheader style="display:none;max-height:0;overflow:hidden;opacity:0">{{ preview_text | escape }}</div>
+    <div style="display:none;max-height:0;overflow:hidden">&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5">
+      <tr>
+        <td align="center" style="padding:32px 16px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+            <tr>
+              <td style="padding:0 4px 16px;font-size:18px;font-weight:700;letter-spacing:-0.02em;color:#171717">Cadence</td>
+            </tr>
+            <tr>
+              <td style="background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;padding:28px 24px">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    {%- if actor.name %}
+                    <td width="44" valign="top" style="padding-right:12px">
+                      <div style="width:40px;height:40px;border-radius:20px;background:#e5e5e5;color:#404040;font-size:14px;font-weight:600;line-height:40px;text-align:center">{{ initials | upcase | escape }}</div>
+                    </td>
+                    {%- endif %}
+                    <td valign="top" style="font-size:15px;line-height:22px;color:#171717">
+                      {{ content }}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 4px;font-size:12px;line-height:18px;color:#71717a">
+                Change what Cadence emails you in your <a href="{{ vars.settings_url }}" style="color:#52525b">Notification settings</a>.
+                This address doesn't accept replies.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

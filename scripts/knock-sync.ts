@@ -1,7 +1,8 @@
 // npm run knock:sync [environment]
 //
 // Pushes the Notification config in the repo to a Knock environment (ADR 0013):
-//   1. `knock workflow push --all --commit` for knock/workflows (Development).
+//   1. `knock push --commit` for everything in knock/ (Development): the
+//      email partials and layout first, then the workflows that use them.
 //      For any other environment, the Development commits are then promoted
 //      to it with `knock commit promote` — Knock only accepts changes in
 //      Development.
@@ -42,11 +43,9 @@ function knock(...args: string[]) {
 }
 
 knock(
-  "workflow",
   "push",
-  "--all",
-  "--workflows-dir",
-  "knock/workflows",
+  "--knock-dir",
+  "knock",
   "--commit",
   "--commit-message",
   "knock:sync",

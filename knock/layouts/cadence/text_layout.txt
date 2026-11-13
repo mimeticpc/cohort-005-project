@@ -1,0 +1,5 @@
+{{ content }}
+
+--
+Change what Cadence emails you in your Notification settings: {{ vars.settings_url }}
+This address doesn't accept replies.

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://schemas.knock.app/cli/email-layout.json",
+  "name": "Cadence",
+  "html_layout@": "html_layout.html",
+  "text_layout@": "text_layout.txt"
+}

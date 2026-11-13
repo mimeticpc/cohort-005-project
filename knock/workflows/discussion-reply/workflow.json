@@ -22,6 +22,19 @@
         "action_url": "{{ data.url }}",
         "markdown_body@": "in_app_feed_1/markdown_body.md"
       }
+    },
+    {
+      "ref": "email_1",
+      "type": "channel",
+      "channel_key": "resend",
+      "template": {
+        "subject": "{{ actor.name }} replied to your question on {{ data.lesson_title }}",
+        "settings": {
+          "layout_key": "cadence",
+          "pre_content": "{% capture preview_text %}{{ data.excerpt }}{% endcapture %}"
+        },
+        "html_body@": "email_1/html_body.html"
+      }
     }
   ]
 }
