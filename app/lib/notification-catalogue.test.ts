@@ -42,6 +42,20 @@ describe("notification catalogue", () => {
       });
     });
 
+    it("targets the lesson discussion URL sent in the trigger data", () => {
+      const entry = notificationCatalogue["discussion-reply"];
+      expect(
+        entry.target({ url: "/courses/intro/lessons/3#discussion" })
+      ).toBe("/courses/intro/lessons/3#discussion");
+    });
+
+    it("has no target when the trigger data carries no in-app URL", () => {
+      const entry = notificationCatalogue["discussion-reply"];
+      expect(entry.target({})).toBeNull();
+      expect(entry.target({ url: "https://evil.example/x" })).toBeNull();
+      expect(entry.target({ url: "//evil.example/x" })).toBeNull();
+    });
+
     it("is shown to every role", () => {
       for (const role of [
         UserRole.Student,
