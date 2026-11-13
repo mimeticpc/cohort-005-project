@@ -34,6 +34,10 @@ export type NotificationEntry<Key extends string = string> = {
 };
 
 const everyone = () => true;
+// Buyers who can raise a Refund Request: Students (and the Team Admins
+// among them, who buy Team Licences). Compared as a string so this module
+// stays free of the schema's runtime code (it ships to the browser).
+const buyers = (viewer: Viewer) => `${viewer.role}` === "student";
 
 // Only same-origin paths: "/x", never "//host" or "https://…".
 function appPath(value: unknown): string | null {
@@ -54,6 +58,29 @@ export const notificationCatalogue = {
     target: (data) => appPath(data.url),
     idempotencyKeyPrefix: "discussion-reply",
     visibleTo: everyone,
+  },
+  // A Refund Request is decided once, so approved and declined share the
+  // idempotency-key prefix. They are separate workflows so each has its own
+  // Notification Preference row.
+  "refund-request-approved": {
+    key: "refund-request-approved",
+    name: "Refund Request approved",
+    recipient: "The buyer (the Student, or the Team Admin for a Team Licence)",
+    defaults: { in_app_feed: true, email: true },
+    ctaLabel: "View",
+    target: (data) => appPath(data.url),
+    idempotencyKeyPrefix: "refund-request-decided",
+    visibleTo: buyers,
+  },
+  "refund-request-declined": {
+    key: "refund-request-declined",
+    name: "Refund Request declined",
+    recipient: "The buyer (the Student, or the Team Admin for a Team Licence)",
+    defaults: { in_app_feed: true, email: true },
+    ctaLabel: "View course",
+    target: (data) => appPath(data.url),
+    idempotencyKeyPrefix: "refund-request-decided",
+    visibleTo: buyers,
   },
 } as const satisfies { [K in string]: NotificationEntry<K> };
 

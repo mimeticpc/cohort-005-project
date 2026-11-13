@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schemas.knock.app/cli/workflow.json",
+  "name": "Refund Request declined",
+  "description": "A Platform Admin declined the buyer's Refund Request. Triggered by notifyRefundRequestDeclined in app/lib/notifications.server.ts; defaults live in app/lib/notification-catalogue.ts.",
+  "categories": [],
+  "trigger_data_json_schema": {
+    "type": "object",
+    "required": ["course_title", "amount", "purchased_on", "decision_note", "url"],
+    "properties": {
+      "course_title": { "type": "string" },
+      "amount": { "type": "string" },
+      "purchased_on": { "type": "string" },
+      "decision_note": { "type": "string" },
+      "url": { "type": "string" }
+    }
+  },
+  "steps": [
+    {
+      "ref": "in_app_feed_1",
+      "type": "channel",
+      "channel_key": "in-app-feed",
+      "template": {
+        "action_url": "{{ data.url }}",
+        "markdown_body@": "in_app_feed_1/markdown_body.md"
+      }
+    },
+    {
+      "ref": "email_1",
+      "type": "channel",
+      "channel_key": "resend",
+      "template": {
+        "subject": "Your Refund Request for {{ data.course_title }} was declined",
+        "settings": {
+          "layout_key": "cadence",
+          "pre_content": "{% capture preview_text %}{{ data.decision_note | truncate: 90 }}{% endcapture %}"
+        },
+        "html_body@": "email_1/html_body.html"
+      }
+    }
+  ]
+}

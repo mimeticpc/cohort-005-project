@@ -58,6 +58,16 @@ const rowSentence: Record<
     { text: " replied to your question on " },
     { text: text(data.lesson_title), bold: true },
   ],
+  "refund-request-approved": (_actor, data) => [
+    { text: "Your Refund Request for " },
+    { text: text(data.course_title), bold: true },
+    { text: " was approved" },
+  ],
+  "refund-request-declined": (_actor, data) => [
+    { text: "Your Refund Request for " },
+    { text: text(data.course_title), bold: true },
+    { text: " was declined" },
+  ],
 };
 
 export function sentenceText(sentence: SentencePart[]): string {
@@ -105,7 +115,8 @@ export function feedRow(item: FeedItemLike): FeedRow | null {
     actorName,
     avatarUrl: stringProp(actor, "avatar"),
     sentence: rowSentence[key](actorName, data),
-    excerpt: text(data.excerpt) || null,
+    // The Discussion excerpt, or a refund decision's note.
+    excerpt: text(data.excerpt) || text(data.decision_note) || null,
     ctaLabel: entry.ctaLabel,
     target: entry.target(data),
     unread: !item.read_at,

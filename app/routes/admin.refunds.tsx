@@ -21,7 +21,10 @@ import {
   type RefundRequestForReview,
 } from "~/lib/refunds.server";
 import { RULE_BREAK_LABELS } from "~/lib/refund-rules";
-import { sendEmail } from "~/lib/mailer.server";
+import {
+  notifyRefundRequestApproved,
+  notifyRefundRequestDeclined,
+} from "~/lib/notifications.server";
 
 const refundFilterSchema = z
   .nativeEnum(RefundStatus)
@@ -127,7 +130,11 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ error: result.error }, { status: result.status });
   }
 
-  await sendEmail(result.email);
+  // After the decision commits; never throws, so a Knock failure can't fail
+  // the decision.
+  await (intent === "approve"
+    ? notifyRefundRequestApproved(db, refundRequestId)
+    : notifyRefundRequestDeclined(db, refundRequestId));
 
   return {
     success: true,
