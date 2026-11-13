@@ -15,6 +15,9 @@ export type ChannelType = "in_app_feed" | "email";
 
 export type Viewer = { role: UserRole; isTeamAdmin: boolean };
 
+// A feed row's trigger `data`, as Knock hands it back to the browser.
+export type NotificationData = Record<string, unknown>;
+
 export type NotificationEntry<Key extends string = string> = {
   key: Key;
   name: string;
@@ -22,12 +25,24 @@ export type NotificationEntry<Key extends string = string> = {
   recipient: string;
   defaults: Partial<Record<ChannelType, boolean>>;
   ctaLabel: string;
+  // Where the feed row and its CTA go, built from the trigger `data`. Null
+  // when the data carries no usable in-app path.
+  target: (data: NotificationData) => string | null;
   idempotencyKeyPrefix: string;
   // Whether /settings shows this row to the viewer.
   visibleTo: (viewer: Viewer) => boolean;
 };
 
 const everyone = () => true;
+
+// Only same-origin paths: "/x", never "//host" or "https://…".
+function appPath(value: unknown): string | null {
+  return typeof value === "string" &&
+    value.startsWith("/") &&
+    !value.startsWith("//")
+    ? value
+    : null;
+}
 
 export const notificationCatalogue = {
   "discussion-reply": {
@@ -36,6 +51,7 @@ export const notificationCatalogue = {
     recipient: "The Discussion Question's author",
     defaults: { in_app_feed: true, email: true },
     ctaLabel: "View reply",
+    target: (data) => appPath(data.url),
     idempotencyKeyPrefix: "discussion-reply",
     visibleTo: everyone,
   },
