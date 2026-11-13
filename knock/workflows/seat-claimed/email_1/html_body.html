@@ -1,0 +1,5 @@
+<strong>{{ actor.name | escape }}</strong> claimed a Seat on <strong>{{ data.course_title | escape }}</strong>
+{%- assign seats = data.seats_left | append: " of " | append: data.seats_total | append: " Seats left." %}
+{% render "cadence-excerpt", text: seats %}
+{%- assign cta_url = vars.app_url | append: data.url %}
+{% render "cadence-cta", label: "View team", url: cta_url %}

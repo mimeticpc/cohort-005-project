@@ -1,0 +1,3 @@
+<strong>{{ actor.name | escape }}</strong> enrolled in <strong>{{ data.course_title | escape }}</strong>
+{%- assign cta_url = vars.app_url | append: data.url %}
+{% render "cadence-cta", label: "See students", url: cta_url %}

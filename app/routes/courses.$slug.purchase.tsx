@@ -36,6 +36,7 @@ import { UserAvatar } from "~/components/user-avatar";
 import { data } from "react-router";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { resolveCountry } from "~/lib/country.server";
+import { notifyNewEnrollment } from "~/lib/notifications.server";
 import { calculatePppPrice, getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { parseFormData, parseParams } from "~/lib/validation";
 
@@ -368,7 +369,9 @@ export async function action({ params, request }: Route.ActionArgs) {
       throw redirect(`/courses/${slug}`);
     }
     createPurchase(currentUserId, course.id, pppPrice, country);
-    enrollUser(currentUserId, course.id, false, false);
+    const enrollment = enrollUser(currentUserId, course.id, false, false);
+    // After the Enrollment has committed, before the redirect throws.
+    await notifyNewEnrollment(db, enrollment.id);
     throw redirect(`/courses/${slug}/welcome`);
   }
 

@@ -74,6 +74,54 @@ describe("feedRow", () => {
     expect(row?.excerpt).toBeNull();
   });
 
+  it("builds a Seat claimed row that goes to /team", () => {
+    const row = feedRow({
+      source: { key: "seat-claimed" },
+      actors: [{ id: "5", name: "Emma Wilson" }],
+      data: {
+        course_title: "Intro to Cooking",
+        seats_left: "2",
+        seats_total: "5",
+        url: "/team",
+      },
+      read_at: null,
+    });
+
+    expect(row).toMatchObject({
+      sentence: [
+        { text: "Emma Wilson", bold: true },
+        { text: " claimed a Seat on " },
+        { text: "Intro to Cooking", bold: true },
+      ],
+      excerpt: null,
+      ctaLabel: "View team",
+      target: "/team",
+    });
+  });
+
+  it("builds a New Enrollment row that goes to the course's students", () => {
+    const row = feedRow({
+      source: { key: "new-enrollment" },
+      actors: [{ id: "5", name: "Emma Wilson" }],
+      data: {
+        course_title: "Intro to Cooking",
+        course_id: "3",
+        url: "/instructor/3/students",
+      },
+      read_at: null,
+    });
+
+    expect(row).toMatchObject({
+      sentence: [
+        { text: "Emma Wilson", bold: true },
+        { text: " enrolled in " },
+        { text: "Intro to Cooking", bold: true },
+      ],
+      ctaLabel: "See students",
+      target: "/instructor/3/students",
+    });
+  });
+
   it("skips Notifications Cadence doesn't know", () => {
     expect(
       feedRow({ ...replyItem, source: { key: "some-old-workflow" } })

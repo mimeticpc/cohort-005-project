@@ -58,6 +58,16 @@ const rowSentence: Record<
     { text: " replied to your question on " },
     { text: text(data.lesson_title), bold: true },
   ],
+  "seat-claimed": (actor, data) => [
+    { text: actor, bold: true },
+    { text: " claimed a Seat on " },
+    { text: text(data.course_title), bold: true },
+  ],
+  "new-enrollment": (actor, data) => [
+    { text: actor, bold: true },
+    { text: " enrolled in " },
+    { text: text(data.course_title), bold: true },
+  ],
 };
 
 export function sentenceText(sentence: SentencePart[]): string {

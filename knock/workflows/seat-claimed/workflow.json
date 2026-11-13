@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schemas.knock.app/cli/workflow.json",
+  "name": "Seat claimed",
+  "description": "A Student claimed a Seat on your team's Team Licence. Triggered by notifySeatClaimed in app/lib/notifications.server.ts; defaults live in app/lib/notification-catalogue.ts.",
+  "categories": [],
+  "trigger_data_json_schema": {
+    "type": "object",
+    "required": ["course_title", "seats_left", "seats_total", "url"],
+    "properties": {
+      "course_title": { "type": "string" },
+      "seats_left": { "type": "string" },
+      "seats_total": { "type": "string" },
+      "url": { "type": "string" }
+    }
+  },
+  "steps": [
+    {
+      "ref": "in_app_feed_1",
+      "type": "channel",
+      "channel_key": "in-app-feed",
+      "template": {
+        "action_url": "{{ data.url }}",
+        "markdown_body@": "in_app_feed_1/markdown_body.md"
+      }
+    },
+    {
+      "ref": "email_1",
+      "type": "channel",
+      "channel_key": "resend",
+      "template": {
+        "subject": "{{ actor.name }} claimed a Seat on {{ data.course_title }}",
+        "settings": {
+          "layout_key": "cadence",
+          "pre_content": "{% capture preview_text %}{{ data.seats_left }} of {{ data.seats_total }} Seats left.{% endcapture %}"
+        },
+        "html_body@": "email_1/html_body.html"
+      }
+    }
+  ]
+}

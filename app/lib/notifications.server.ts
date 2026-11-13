@@ -1,7 +1,17 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "~/db/schema";
-import { comments, courses, lessons, modules, users } from "~/db/schema";
+import {
+  comments,
+  coupons,
+  courses,
+  enrollments,
+  lessons,
+  modules,
+  teamMembers,
+  TeamMemberRole,
+  users,
+} from "~/db/schema";
 import { commentExcerpt } from "~/lib/comment-markdown.server";
 import {
   defaultKnockGateway,
@@ -137,8 +147,129 @@ export const notifyDiscussionReply: NotificationTrigger = async (
   }
 };
 
+// Seat claimed: tells every Team Admin of the Seat's team, except the
+// claimer, that a Student claimed a Seat on their Team Licence. Seats count
+// the Team Licence's Seats, leaving out refunded Unclaimed Seats (as /team does).
+export const notifySeatClaimed: NotificationTrigger = async (
+  db,
+  couponId,
+  gateway = defaultKnockGateway()
+) => {
+  try {
+    const seat = db
+      .select()
+      .from(coupons)
+      .where(eq(coupons.id, couponId))
+      .get();
+    if (!seat || seat.redeemedByUserId === null) return;
+
+    const actor = db
+      .select()
+      .from(users)
+      .where(eq(users.id, seat.redeemedByUserId))
+      .get();
+    const course = db
+      .select({ title: courses.title })
+      .from(courses)
+      .where(eq(courses.id, seat.courseId))
+      .get();
+    if (!actor || !course) return;
+
+    const teamAdmins = db
+      .select({ user: users })
+      .from(teamMembers)
+      .innerJoin(users, eq(teamMembers.userId, users.id))
+      .where(
+        and(
+          eq(teamMembers.teamId, seat.teamId),
+          eq(teamMembers.role, TeamMemberRole.Admin)
+        )
+      )
+      .all()
+      .map((row) => row.user);
+
+    const seats = db
+      .select({ redeemedByUserId: coupons.redeemedByUserId })
+      .from(coupons)
+      .where(
+        and(eq(coupons.purchaseId, seat.purchaseId), isNull(coupons.refundedAt))
+      )
+      .all();
+    const seatsLeft = seats.filter((s) => s.redeemedByUserId === null).length;
+
+    await send(gateway, "seat-claimed", seat.id, actor, teamAdmins, {
+      course_title: course.title,
+      seats_left: String(seatsLeft),
+      seats_total: String(seats.length),
+      url: "/team",
+    });
+  } catch (error) {
+    console.error(
+      `[notifications] trigger failed workflow=seat-claimed idempotencyKey=${idempotencyKey("seat-claimed", couponId)}:`,
+      error
+    );
+  }
+};
+
+// New Enrollment: tells the course's Instructor about each new Enrollment,
+// from an Individual Purchase or a Claimed Seat (a Lapsed Student enrolling
+// again is a new Enrollment). Buying a Team Licence enrolls no one.
+export const notifyNewEnrollment: NotificationTrigger = async (
+  db,
+  enrollmentId,
+  gateway = defaultKnockGateway()
+) => {
+  try {
+    const enrollment = db
+      .select()
+      .from(enrollments)
+      .where(eq(enrollments.id, enrollmentId))
+      .get();
+    if (!enrollment) return;
+
+    const course = db
+      .select()
+      .from(courses)
+      .where(eq(courses.id, enrollment.courseId))
+      .get();
+    const actor = db
+      .select()
+      .from(users)
+      .where(eq(users.id, enrollment.userId))
+      .get();
+    const instructor = course
+      ? db.select().from(users).where(eq(users.id, course.instructorId)).get()
+      : undefined;
+    if (!course || !actor || !instructor) return;
+
+    await send(gateway, "new-enrollment", enrollment.id, actor, [instructor], {
+      course_title: course.title,
+      course_id: String(course.id),
+      url: `/instructor/${course.id}/students`,
+    });
+  } catch (error) {
+    console.error(
+      `[notifications] trigger failed workflow=new-enrollment idempotencyKey=${idempotencyKey("new-enrollment", enrollmentId)}:`,
+      error
+    );
+  }
+};
+
+// A coupon redeem claims a Seat and creates an Enrollment, so it fires both.
+export async function notifyCouponRedeemed(
+  db: Db,
+  couponId: number,
+  enrollmentId: number,
+  gateway: KnockGateway | null = defaultKnockGateway()
+) {
+  await notifySeatClaimed(db, couponId, gateway);
+  await notifyNewEnrollment(db, enrollmentId, gateway);
+}
+
 export const notificationTriggers = {
   "discussion-reply": notifyDiscussionReply,
+  "seat-claimed": notifySeatClaimed,
+  "new-enrollment": notifyNewEnrollment,
 } satisfies Record<NotificationKey, NotificationTrigger>;
 
 // ─── Notification Feed config ───

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schemas.knock.app/cli/workflow.json",
+  "name": "New Enrollment",
+  "description": "A Student enrolled in your course (Individual Purchase or Claimed Seat). Triggered by notifyNewEnrollment in app/lib/notifications.server.ts; defaults (off on every channel) live in app/lib/notification-catalogue.ts.",
+  "categories": [],
+  "trigger_data_json_schema": {
+    "type": "object",
+    "required": ["course_title", "course_id", "url"],
+    "properties": {
+      "course_title": { "type": "string" },
+      "course_id": { "type": "string" },
+      "url": { "type": "string" }
+    }
+  },
+  "steps": [
+    {
+      "ref": "in_app_feed_1",
+      "type": "channel",
+      "channel_key": "in-app-feed",
+      "template": {
+        "action_url": "{{ data.url }}",
+        "markdown_body@": "in_app_feed_1/markdown_body.md"
+      }
+    },
+    {
+      "ref": "email_1",
+      "type": "channel",
+      "channel_key": "resend",
+      "template": {
+        "subject": "{{ actor.name }} enrolled in {{ data.course_title }}",
+        "settings": {
+          "layout_key": "cadence",
+          "pre_content": "{% capture preview_text %}{{ data.course_title }} has a new student.{% endcapture %}"
+        },
+        "html_body@": "email_1/html_body.html"
+      }
+    }
+  ]
+}

@@ -119,6 +119,78 @@ describe("Discussion Reply email", () => {
   });
 });
 
+describe("Seat claimed email", () => {
+  const context: EmailContext = {
+    recipient: { id: "10", name: "Bossy McBossface", email: "bossy@example.com" },
+    actor: { id: "5", name: "Emma Wilson", email: "emma@example.com" },
+    data: {
+      course_title: "Cooking & Knives",
+      seats_left: "2",
+      seats_total: "5",
+      url: "/team",
+    },
+    vars,
+  };
+
+  it("uses the feed sentence in plain text as the subject", async () => {
+    const email = await renderEmail("seat-claimed", context);
+
+    expect(email.subject).toBe("Emma Wilson claimed a Seat on Cooking & Knives");
+  });
+
+  it("uses the Seat counts as the preheader and shows them in the body", async () => {
+    const html = (await renderEmail("seat-claimed", context)).html;
+
+    expect(preheaderOf(html)).toBe("2 of 5 Seats left.");
+    expect(textOf(html)).toContain(
+      "Emma Wilson claimed a Seat on Cooking & Knives 2 of 5 Seats left."
+    );
+  });
+
+  it("links the feed's CTA label to the absolute /team URL", async () => {
+    const links = linksIn((await renderEmail("seat-claimed", context)).html);
+
+    expect(links).toContainEqual({
+      href: "https://cadence.example/team",
+      label: notificationCatalogue["seat-claimed"].ctaLabel,
+    });
+  });
+});
+
+describe("New Enrollment email", () => {
+  const context: EmailContext = {
+    recipient: { id: "2", name: "Sarah Chen", email: "sarah@example.com" },
+    actor: { id: "5", name: "Emma Wilson", email: "emma@example.com" },
+    data: {
+      course_title: "Cooking & Knives",
+      course_id: "3",
+      url: "/instructor/3/students",
+    },
+    vars,
+  };
+
+  it("uses the feed sentence in plain text as the subject", async () => {
+    const email = await renderEmail("new-enrollment", context);
+
+    expect(email.subject).toBe("Emma Wilson enrolled in Cooking & Knives");
+  });
+
+  it("has a preheader", async () => {
+    const html = (await renderEmail("new-enrollment", context)).html;
+
+    expect(preheaderOf(html)).toBe("Cooking & Knives has a new student.");
+  });
+
+  it("links the feed's CTA label to the absolute student list URL", async () => {
+    const links = linksIn((await renderEmail("new-enrollment", context)).html);
+
+    expect(links).toContainEqual({
+      href: "https://cadence.example/instructor/3/students",
+      label: notificationCatalogue["new-enrollment"].ctaLabel,
+    });
+  });
+});
+
 // The refund emails (#64, #65) use this table in place of the excerpt.
 describe("cadence-details partial", () => {
   function rowsOf(html: string) {

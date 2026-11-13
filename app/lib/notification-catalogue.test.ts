@@ -76,6 +76,55 @@ describe("notification catalogue", () => {
   });
 });
 
+describe("Seat claimed", () => {
+  const entry = notificationCatalogue["seat-claimed"];
+
+  it("is on in the feed and off by email by default, with a View team CTA to /team", () => {
+    expect(entry).toMatchObject({
+      idempotencyKeyPrefix: "seat-claimed",
+      ctaLabel: "View team",
+      defaults: { in_app_feed: true, email: false },
+    });
+    expect(entry.target({ url: "/team" })).toBe("/team");
+  });
+
+  it("is shown only to Team Admins", () => {
+    const keysFor = (role: UserRole, isTeamAdmin: boolean) =>
+      visibleNotifications({ role, isTeamAdmin }).map((e) => e.key);
+
+    expect(keysFor(UserRole.Student, true)).toContain("seat-claimed");
+    expect(keysFor(UserRole.Student, false)).not.toContain("seat-claimed");
+    expect(keysFor(UserRole.Instructor, false)).not.toContain("seat-claimed");
+  });
+});
+
+describe("New Enrollment", () => {
+  const entry = notificationCatalogue["new-enrollment"];
+
+  it("is off on every channel by default, with a See students CTA", () => {
+    expect(entry).toMatchObject({
+      idempotencyKeyPrefix: "enrollment-created",
+      ctaLabel: "See students",
+      defaults: { in_app_feed: false, email: false },
+    });
+  });
+
+  it("targets the course's student list from the course id in the data", () => {
+    expect(entry.target({ course_id: "7" })).toBe("/instructor/7/students");
+    expect(entry.target({})).toBeNull();
+    expect(entry.target({ course_id: "../admin" })).toBeNull();
+  });
+
+  it("is shown only to Instructors", () => {
+    const keysFor = (role: UserRole) =>
+      visibleNotifications({ role, isTeamAdmin: true }).map((e) => e.key);
+
+    expect(keysFor(UserRole.Instructor)).toContain("new-enrollment");
+    expect(keysFor(UserRole.Student)).not.toContain("new-enrollment");
+    expect(keysFor(UserRole.Admin)).not.toContain("new-enrollment");
+  });
+});
+
 describe("knock/workflows", () => {
   it("defines a workflow in the repo for every catalogue entry", () => {
     const workflowsDir = new URL("../../knock/workflows/", import.meta.url);
@@ -124,6 +173,12 @@ describe("environmentDefaults", () => {
       workflows: {
         "discussion-reply": {
           channel_types: { in_app_feed: true, email: true },
+        },
+        "seat-claimed": {
+          channel_types: { in_app_feed: true, email: false },
+        },
+        "new-enrollment": {
+          channel_types: { in_app_feed: false, email: false },
         },
       },
     });

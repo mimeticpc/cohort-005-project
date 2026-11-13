@@ -1,4 +1,4 @@
-import type { UserRole } from "~/db/schema";
+import { UserRole } from "~/db/schema";
 
 // ─── Notification catalogue ───
 // The only source of truth for which Notifications Cadence sends (ADR 0013).
@@ -44,6 +44,12 @@ function appPath(value: unknown): string | null {
     : null;
 }
 
+function instructorStudentsPath(courseId: unknown): string | null {
+  return typeof courseId === "string" && /^\d+$/.test(courseId)
+    ? `/instructor/${courseId}/students`
+    : null;
+}
+
 export const notificationCatalogue = {
   "discussion-reply": {
     key: "discussion-reply",
@@ -54,6 +60,26 @@ export const notificationCatalogue = {
     target: (data) => appPath(data.url),
     idempotencyKeyPrefix: "discussion-reply",
     visibleTo: everyone,
+  },
+  "seat-claimed": {
+    key: "seat-claimed",
+    name: "Seat claimed",
+    recipient: "The team's Team Admins, except the claimer",
+    defaults: { in_app_feed: true, email: false },
+    ctaLabel: "View team",
+    target: (data) => appPath(data.url),
+    idempotencyKeyPrefix: "seat-claimed",
+    visibleTo: (viewer) => viewer.isTeamAdmin,
+  },
+  "new-enrollment": {
+    key: "new-enrollment",
+    name: "New Enrollment",
+    recipient: "The course's Instructor",
+    defaults: { in_app_feed: false, email: false },
+    ctaLabel: "See students",
+    target: (data) => instructorStudentsPath(data.course_id),
+    idempotencyKeyPrefix: "enrollment-created",
+    visibleTo: (viewer) => viewer.role === UserRole.Instructor,
   },
 } as const satisfies { [K in string]: NotificationEntry<K> };
 
