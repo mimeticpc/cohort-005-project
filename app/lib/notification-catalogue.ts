@@ -51,6 +51,16 @@ function instructorStudentsPath(courseId: unknown): string | null {
 }
 
 export const notificationCatalogue = {
+  "discussion-question": {
+    key: "discussion-question",
+    name: "New Discussion Question",
+    recipient: "The course's Instructor",
+    defaults: { in_app_feed: true, email: true },
+    ctaLabel: "Answer",
+    target: (data) => appPath(data.url),
+    idempotencyKeyPrefix: "discussion-question",
+    visibleTo: (viewer) => viewer.role === UserRole.Instructor,
+  },
   "discussion-reply": {
     key: "discussion-reply",
     name: "Discussion Reply",

@@ -119,6 +119,76 @@ describe("Discussion Reply email", () => {
   });
 });
 
+describe("New Discussion Question email", () => {
+  const context: EmailContext = {
+    recipient: { id: "2", name: "Test Instructor", email: "i@example.com" },
+    actor: { id: "1", name: "Sam Student", email: "sam@example.com" },
+    data: {
+      course_title: "TypeScript Basics",
+      lesson_title: "Closures & Scope",
+      excerpt: "Why does this print undefined?",
+      url: "/instructor/questions",
+    },
+    vars,
+  };
+
+  it("uses the feed sentence in plain text as the subject", async () => {
+    const email = await renderEmail("discussion-question", context);
+
+    expect(email.subject).toBe(
+      "Sam Student asked a question on Closures & Scope"
+    );
+  });
+
+  it("uses the excerpt as the preheader", async () => {
+    const email = await renderEmail("discussion-question", context);
+
+    expect(preheaderOf(email.html)).toBe("Why does this print undefined?");
+  });
+
+  it("shows the sentence and the excerpt", async () => {
+    const text = textOf(
+      (await renderEmail("discussion-question", context)).html
+    );
+
+    expect(text).toContain(
+      "Sam Student asked a question on Closures & Scope Why does this print undefined?"
+    );
+  });
+
+  it("links the Answer CTA to the absolute /instructor/questions URL", async () => {
+    const links = linksIn(
+      (await renderEmail("discussion-question", context)).html
+    );
+
+    expect(links).toContainEqual({
+      href: "https://cadence.example/instructor/questions",
+      label: notificationCatalogue["discussion-question"].ctaLabel,
+    });
+    expect(notificationCatalogue["discussion-question"].ctaLabel).toBe(
+      "Answer"
+    );
+  });
+
+  it("escapes HTML in the names and the excerpt", async () => {
+    const html = (
+      await renderEmail("discussion-question", {
+        ...context,
+        actor: { ...context.actor, name: "<b>Eve</b>" },
+        data: {
+          ...context.data,
+          lesson_title: "<i>L</i>",
+          excerpt: "Use <script> tags",
+        },
+      })
+    ).html;
+
+    expect(html).not.toContain("<b>Eve</b>");
+    expect(html).not.toContain("<i>L</i>");
+    expect(html).not.toContain("<script>");
+  });
+});
+
 describe("Seat claimed email", () => {
   const context: EmailContext = {
     recipient: { id: "10", name: "Bossy McBossface", email: "bossy@example.com" },

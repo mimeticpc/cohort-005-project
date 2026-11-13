@@ -74,6 +74,34 @@ describe("feedRow", () => {
     expect(row?.excerpt).toBeNull();
   });
 
+  it("builds a New Discussion Question row with an Answer CTA", () => {
+    expect(
+      feedRow({
+        source: { key: "discussion-question" },
+        actors: [{ id: "1", name: "Sam Student" }],
+        data: {
+          course_title: "Intro to Cooking",
+          lesson_title: "Knife Skills",
+          excerpt: "Which knife for onions?",
+          url: "/instructor/questions",
+        },
+        read_at: null,
+      })
+    ).toEqual({
+      actorName: "Sam Student",
+      avatarUrl: null,
+      sentence: [
+        { text: "Sam Student", bold: true },
+        { text: " asked a question on " },
+        { text: "Knife Skills", bold: true },
+      ],
+      excerpt: "Which knife for onions?",
+      ctaLabel: "Answer",
+      target: "/instructor/questions",
+      unread: true,
+    });
+  });
+
   it("builds a Seat claimed row that goes to /team", () => {
     const row = feedRow({
       source: { key: "seat-claimed" },
