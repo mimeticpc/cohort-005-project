@@ -168,7 +168,7 @@ export async function action({ request }: Route.ActionArgs) {
   const access = await requireStaff(request, course.courseId);
 
   try {
-    createComment(
+    await createComment(
       db,
       access.userId!,
       question.lessonId,

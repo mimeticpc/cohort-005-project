@@ -3,6 +3,7 @@ import { createTestDb, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { createComment } from "./comments.server";
 import { MAX_COMMENT_LENGTH } from "./comments";
+import { recordingGateway } from "./knock-gateway.server";
 
 type TestDb = ReturnType<typeof createTestDb>;
 
@@ -34,10 +35,26 @@ beforeEach(() => {
     .get().id;
 });
 
+// Notifications are covered in notifications.server.test.ts.
+function post(
+  userId: number,
+  onLessonId: number,
+  parentId: number | null,
+  body: string
+) {
+  return createComment(
+    db,
+    userId,
+    onLessonId,
+    parentId,
+    body,
+    recordingGateway()
+  );
+}
+
 describe("createComment", () => {
-  it("posts a Discussion Question on a lesson", () => {
-    const question = createComment(
-      db,
+  it("posts a Discussion Question on a lesson", async () => {
+    const question = await post(
       base.user.id,
       lessonId,
       null,
@@ -52,26 +69,27 @@ describe("createComment", () => {
     });
   });
 
-  it("rejects a blank body", () => {
-    expect(() => createComment(db, base.user.id, lessonId, null, "   ")).toThrow(
+  it("rejects a blank body", async () => {
+    await expect(post(base.user.id, lessonId, null, "   ")).rejects.toThrow(
       "Comment cannot be empty"
     );
   });
 
-  it("accepts a body at the length limit and rejects one past it", () => {
+  it("accepts a body at the length limit and rejects one past it", async () => {
     expect(
-      createComment(db, base.user.id, lessonId, null, "a".repeat(5000)).body
+      (await post(base.user.id, lessonId, null, "a".repeat(5000))).body
     ).toHaveLength(5000);
-    expect(() =>
-      createComment(db, base.user.id, lessonId, null, "a".repeat(5001))
-    ).toThrow(`Comment must be ${MAX_COMMENT_LENGTH} characters or fewer`);
+    await expect(
+      post(base.user.id, lessonId, null, "a".repeat(5001))
+    ).rejects.toThrow(
+      `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer`
+    );
   });
 
-  it("posts a Discussion Reply under a question on the same lesson", () => {
-    const question = createComment(db, base.user.id, lessonId, null, "Why?");
+  it("posts a Discussion Reply under a question on the same lesson", async () => {
+    const question = await post(base.user.id, lessonId, null, "Why?");
 
-    const reply = createComment(
-      db,
+    const reply = await post(
       base.instructor.id,
       lessonId,
       question.id,
@@ -86,44 +104,37 @@ describe("createComment", () => {
     });
   });
 
-  it("rejects a reply whose parent does not exist", () => {
-    expect(() =>
-      createComment(db, base.user.id, lessonId, 9999, "Hello?")
-    ).toThrow("Parent comment not found");
-  });
-
-  it("rejects a reply whose parent is on another lesson", () => {
-    const question = createComment(
-      db,
-      base.user.id,
-      otherLessonId,
-      null,
-      "Elsewhere"
+  it("rejects a reply whose parent does not exist", async () => {
+    await expect(post(base.user.id, lessonId, 9999, "Hello?")).rejects.toThrow(
+      "Parent comment not found"
     );
-
-    expect(() =>
-      createComment(db, base.instructor.id, lessonId, question.id, "Answer")
-    ).toThrow("Parent comment belongs to a different lesson");
   });
 
-  it("rejects a reply to a reply", () => {
-    const question = createComment(db, base.user.id, lessonId, null, "Why?");
-    const reply = createComment(
-      db,
+  it("rejects a reply whose parent is on another lesson", async () => {
+    const question = await post(base.user.id, otherLessonId, null, "Elsewhere");
+
+    await expect(
+      post(base.instructor.id, lessonId, question.id, "Answer")
+    ).rejects.toThrow("Parent comment belongs to a different lesson");
+  });
+
+  it("rejects a reply to a reply", async () => {
+    const question = await post(base.user.id, lessonId, null, "Why?");
+    const reply = await post(
       base.instructor.id,
       lessonId,
       question.id,
       "Because."
     );
 
-    expect(() =>
-      createComment(db, base.user.id, lessonId, reply.id, "But why?")
-    ).toThrow("Replies can only be one level deep");
+    await expect(
+      post(base.user.id, lessonId, reply.id, "But why?")
+    ).rejects.toThrow("Replies can only be one level deep");
   });
 
-  it("rejects a comment on a lesson that does not exist", () => {
-    expect(() =>
-      createComment(db, base.user.id, 9999, null, "Anyone here?")
-    ).toThrow("Lesson not found");
+  it("rejects a comment on a lesson that does not exist", async () => {
+    await expect(
+      post(base.user.id, 9999, null, "Anyone here?")
+    ).rejects.toThrow("Lesson not found");
   });
 });

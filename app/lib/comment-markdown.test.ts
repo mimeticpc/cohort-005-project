@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderComment } from "./comment-markdown.server";
+import { commentExcerpt, renderComment } from "./comment-markdown.server";
 
 describe("renderComment", () => {
   describe("markdown", () => {
@@ -59,7 +59,7 @@ describe("renderComment", () => {
       const html = await renderComment('<img src=x onerror="alert(1)">');
 
       expect(html).not.toContain("<img");
-      expect(html).not.toContain("onerror=\"alert(1)\"");
+      expect(html).not.toContain('onerror="alert(1)"');
     });
 
     it("escapes an iframe", async () => {
@@ -141,5 +141,56 @@ describe("renderComment", () => {
       expect(html).not.toContain("<img");
       expect(html).toContain("tracking");
     });
+  });
+});
+
+describe("commentExcerpt", () => {
+  it("turns Markdown into plain text", () => {
+    expect(
+      commentExcerpt(
+        "# Title\n\n**Bold** and _italic_ with a [link](https://x.test)."
+      )
+    ).toBe("Title Bold and italic with a link.");
+  });
+
+  it("collapses whitespace across lines and list items", () => {
+    expect(commentExcerpt("- one\n- two\n\n\n   three   four")).toBe(
+      "one two three four"
+    );
+  });
+
+  it("keeps code as text", () => {
+    expect(
+      commentExcerpt("Try `map()`:\n\n```ts\nconst a = [1].map((x) => x);\n```")
+    ).toBe("Try map(): const a = [1].map((x) => x);");
+  });
+
+  it("drops images entirely", () => {
+    expect(
+      commentExcerpt("Look ![tracking pixel](https://evil.test/px.gif) here")
+    ).toBe("Look here");
+  });
+
+  it("decodes entities and strips tags", () => {
+    expect(
+      commentExcerpt("Fish &amp; chips &lt;3 <b>bold</b> &#39;quoted&#39;")
+    ).toBe("Fish & chips <3 bold 'quoted'");
+  });
+
+  it("leaves text of 140 characters or fewer uncut", () => {
+    const text = "word ".repeat(28).trim(); // 139 characters
+    expect(commentExcerpt(text)).toBe(text);
+  });
+
+  it("cuts longer text at a word boundary within 140 characters and adds an ellipsis", () => {
+    const text = "abcdefghi ".repeat(20).trim(); // words of 9, 199 characters
+    const excerpt = commentExcerpt(text);
+
+    // 14 words = 139 characters; the 15th would pass 140.
+    expect(excerpt).toBe("abcdefghi ".repeat(14).trim() + "…");
+  });
+
+  it("hard-cuts a single word longer than 140 characters", () => {
+    expect(commentExcerpt("a".repeat(200))).toBe("a".repeat(140) + "…");
   });
 });

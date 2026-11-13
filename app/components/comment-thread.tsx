@@ -353,7 +353,8 @@ export function CommentThread({
   instructorName: string;
 }) {
   return (
-    <Card className="mb-8">
+    // `#discussion` is the target of Discussion Notification links.
+    <Card id="discussion" className="mb-8 scroll-mt-4">
       <CardContent className="p-6">
         <div className="mb-4 flex items-center gap-2">
           <MessageSquare className="size-5 text-primary" />

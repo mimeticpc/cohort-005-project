@@ -1,4 +1,4 @@
-import { marked, Renderer } from "marked";
+import { marked, Renderer, type Token } from "marked";
 import { type Highlighter, createHighlighter } from "shiki";
 
 // ─── Comment Rendering ───
@@ -110,4 +110,79 @@ export async function renderComment(markdown: string): Promise<string> {
   renderer.image = ({ text }) => escapeHtml(text ?? "");
 
   return marked.parse(markdown, { renderer, async: false }) as string;
+}
+
+// ─── Comment Excerpt ───
+// Plain-text snippet of a Discussion comment for Notifications (feed row and
+// email). Pure: walks marked's tokens instead of rendering HTML. Code is kept
+// as text, images are dropped, tags are stripped and entities decoded.
+
+export const EXCERPT_LENGTH = 140;
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
+
+function decodeEntities(text: string): string {
+  return text.replace(
+    /&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+    (entity, body: string) => {
+      if (body[0] === "#") {
+        const hex = body[1] === "x" || body[1] === "X";
+        const code = hex
+          ? parseInt(body.slice(2), 16)
+          : parseInt(body.slice(1), 10);
+        return Number.isNaN(code) ? entity : String.fromCodePoint(code);
+      }
+      return NAMED_ENTITIES[body.toLowerCase()] ?? entity;
+    }
+  );
+}
+
+const BLOCK_CONTAINERS = ["blockquote", "list_item"];
+
+function tokenToText(token: Token): string {
+  switch (token.type) {
+    case "image":
+      return "";
+    case "html":
+      return token.text.replace(/<[^>]*>/g, " ");
+    case "code":
+    case "codespan":
+      return token.text;
+    case "list":
+      return token.items.map(tokenToText).join(" ");
+    case "table":
+      return [...token.header, ...token.rows.flat()]
+        .map((cell) => cell.tokens.map(tokenToText).join(""))
+        .join(" ");
+    default:
+      if ("tokens" in token && Array.isArray(token.tokens)) {
+        // Inline children are adjacent text; block children need a gap.
+        const gap = BLOCK_CONTAINERS.includes(token.type) ? " " : "";
+        return token.tokens.map(tokenToText).join(gap);
+      }
+      return "text" in token && typeof token.text === "string"
+        ? token.text
+        : "";
+  }
+}
+
+export function commentExcerpt(markdown: string): string {
+  const text = decodeEntities(marked.lexer(markdown).map(tokenToText).join(" "))
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= EXCERPT_LENGTH) return text;
+
+  // One character past the limit tells us whether a word ends exactly there.
+  const head = text.slice(0, EXCERPT_LENGTH + 1);
+  const lastSpace = head.lastIndexOf(" ");
+  const cut =
+    lastSpace > 0 ? head.slice(0, lastSpace) : head.slice(0, EXCERPT_LENGTH);
+  return cut.trimEnd() + "…";
 }

@@ -3,12 +3,19 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "~/db/schema";
 import { comments, courses, lessons, modules } from "~/db/schema";
 import { MAX_COMMENT_LENGTH, MIN_COMMENT_LENGTH } from "~/lib/comments";
+import {
+  defaultKnockGateway,
+  type KnockGateway,
+} from "~/lib/knock-gateway.server";
+import { notifyDiscussionReply } from "~/lib/notifications.server";
 
 // ─── Discussion comments ───
 // Posting a Discussion Question or Discussion Reply. Both the lesson page and
 // /instructor/questions post through here, so the rules live in one place.
 //
-// Takes the database first, so tests can hand in an in-memory one.
+// Takes the database first, so tests can hand in an in-memory one, and the
+// KnockGateway last, so tests can hand in recordingGateway(). Notifications
+// are sent after the insert and never make the post fail.
 
 type Db = BetterSQLite3Database<typeof schema>;
 
@@ -26,12 +33,13 @@ export function assertValidCommentBody(body: string) {
   return trimmed;
 }
 
-export function createComment(
+export async function createComment(
   db: Db,
   userId: number,
   lessonId: number,
   parentId: number | null,
-  body: string
+  body: string,
+  gateway: KnockGateway | null = defaultKnockGateway()
 ) {
   const trimmed = assertValidCommentBody(body);
 
@@ -63,9 +71,15 @@ export function createComment(
     }
   }
 
-  return db
+  const comment = db
     .insert(comments)
     .values({ userId, lessonId, parentId, body: trimmed })
     .returning()
     .get();
+
+  if (comment.parentId !== null) {
+    await notifyDiscussionReply(db, comment.id, gateway);
+  }
+
+  return comment;
 }

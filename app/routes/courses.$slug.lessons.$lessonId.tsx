@@ -857,7 +857,7 @@ export async function action({ params, request }: Route.ActionArgs) {
         if (!parsed.success) {
           return { ok: false, error: "Enter a comment before posting." };
         }
-        createComment(
+        await createComment(
           db,
           currentUserId,
           lessonId,

@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     globals: true,
+    setupFiles: ["app/test/network-guard.ts"],
     exclude: [...configDefaults.exclude],
   },
 });

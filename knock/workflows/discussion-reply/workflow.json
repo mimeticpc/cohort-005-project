@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schemas.knock.app/cli/workflow.json",
+  "name": "Discussion Reply",
+  "description": "Someone else replied to your Discussion Question. Triggered by notifyDiscussionReply in app/lib/notifications.server.ts; defaults live in app/lib/notification-catalogue.ts.",
+  "categories": [],
+  "trigger_data_json_schema": {
+    "type": "object",
+    "required": ["course_title", "lesson_title", "excerpt", "url"],
+    "properties": {
+      "course_title": { "type": "string" },
+      "lesson_title": { "type": "string" },
+      "excerpt": { "type": "string" },
+      "url": { "type": "string" }
+    }
+  },
+  "steps": [
+    {
+      "ref": "in_app_feed_1",
+      "type": "channel",
+      "channel_key": "in-app-feed",
+      "template": {
+        "action_url": "{{ data.url }}",
+        "markdown_body@": "in_app_feed_1/markdown_body.md"
+      }
+    }
+  ]
+}

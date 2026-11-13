@@ -2,6 +2,8 @@ import { Outlet } from "react-router";
 import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
+import { NotificationFeed } from "~/components/notification-feed";
+import { getFeedConfig } from "~/lib/notifications.server";
 import { Toaster } from "sonner";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
@@ -213,6 +215,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    // Signs a Knock user token for the session user; the browser reads the
+    // feed itself. Follows the DevUI switcher because this loader re-runs.
+    feedConfig: currentUser ? await getFeedConfig(currentUser.id) : null,
   };
 }
 
@@ -225,6 +230,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    feedConfig,
   } = loaderData;
 
   return (
@@ -233,6 +239,11 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        headerSlot={
+          currentUser && (
+            <NotificationFeed key={currentUser.id} config={feedConfig} />
+          )
+        }
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />
