@@ -137,7 +137,65 @@ export const notifyDiscussionReply: NotificationTrigger = async (
   }
 };
 
+// New Discussion Question: tells the course's Instructor that someone else
+// (a Student, or a Platform Admin) asked a question on one of its lessons.
+export const notifyDiscussionQuestion: NotificationTrigger = async (
+  db,
+  commentId,
+  gateway = defaultKnockGateway()
+) => {
+  try {
+    const question = db
+      .select()
+      .from(comments)
+      .where(eq(comments.id, commentId))
+      .get();
+    if (!question || question.parentId !== null) return;
+
+    const place = db
+      .select({
+        lessonTitle: lessons.title,
+        courseTitle: courses.title,
+        instructorId: courses.instructorId,
+      })
+      .from(lessons)
+      .innerJoin(modules, eq(lessons.moduleId, modules.id))
+      .innerJoin(courses, eq(modules.courseId, courses.id))
+      .where(eq(lessons.id, question.lessonId))
+      .get();
+    const actor = db
+      .select()
+      .from(users)
+      .where(eq(users.id, question.userId))
+      .get();
+    const instructor = place
+      ? db.select().from(users).where(eq(users.id, place.instructorId)).get()
+      : undefined;
+    if (!place || !actor || !instructor) return;
+
+    await send(
+      gateway,
+      "discussion-question",
+      question.id,
+      actor,
+      [instructor],
+      {
+        course_title: place.courseTitle,
+        lesson_title: place.lessonTitle,
+        excerpt: commentExcerpt(question.body),
+        url: "/instructor/questions",
+      }
+    );
+  } catch (error) {
+    console.error(
+      `[notifications] trigger failed workflow=discussion-question idempotencyKey=${idempotencyKey("discussion-question", commentId)}:`,
+      error
+    );
+  }
+};
+
 export const notificationTriggers = {
+  "discussion-question": notifyDiscussionQuestion,
   "discussion-reply": notifyDiscussionReply,
 } satisfies Record<NotificationKey, NotificationTrigger>;
 

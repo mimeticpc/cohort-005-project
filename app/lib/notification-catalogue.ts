@@ -1,4 +1,4 @@
-import type { UserRole } from "~/db/schema";
+import { UserRole } from "~/db/schema";
 
 // ─── Notification catalogue ───
 // The only source of truth for which Notifications Cadence sends (ADR 0013).
@@ -45,6 +45,16 @@ function appPath(value: unknown): string | null {
 }
 
 export const notificationCatalogue = {
+  "discussion-question": {
+    key: "discussion-question",
+    name: "New Discussion Question",
+    recipient: "The course's Instructor",
+    defaults: { in_app_feed: true, email: true },
+    ctaLabel: "Answer",
+    target: (data) => appPath(data.url),
+    idempotencyKeyPrefix: "discussion-question",
+    visibleTo: (viewer) => viewer.role === UserRole.Instructor,
+  },
   "discussion-reply": {
     key: "discussion-reply",
     name: "Discussion Reply",

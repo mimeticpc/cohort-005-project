@@ -38,6 +38,34 @@ describe("notification catalogue", () => {
     }
   });
 
+  describe("New Discussion Question", () => {
+    it("goes to the feed and by email, both on by default, with an Answer CTA", () => {
+      expect(notificationCatalogue["discussion-question"]).toMatchObject({
+        key: "discussion-question",
+        idempotencyKeyPrefix: "discussion-question",
+        ctaLabel: "Answer",
+        defaults: { in_app_feed: true, email: true },
+      });
+    });
+
+    it("targets /instructor/questions", () => {
+      const entry = notificationCatalogue["discussion-question"];
+      expect(entry.target({ url: "/instructor/questions" })).toBe(
+        "/instructor/questions"
+      );
+      expect(entry.target({ url: "https://evil.example/x" })).toBeNull();
+    });
+
+    it("is shown only to Instructors", () => {
+      const keysFor = (role: UserRole) =>
+        visibleNotifications({ role, isTeamAdmin: false }).map((e) => e.key);
+
+      expect(keysFor(UserRole.Instructor)).toContain("discussion-question");
+      expect(keysFor(UserRole.Student)).not.toContain("discussion-question");
+      expect(keysFor(UserRole.Admin)).not.toContain("discussion-question");
+    });
+  });
+
   describe("Discussion Reply", () => {
     it("goes to the feed and by email, both on by default, with a View reply CTA", () => {
       expect(notificationCatalogue["discussion-reply"]).toMatchObject({
@@ -122,6 +150,9 @@ describe("environmentDefaults", () => {
   it("sets every catalogue entry at workflow × channel_types level only", () => {
     expect(environmentDefaults()).toEqual({
       workflows: {
+        "discussion-question": {
+          channel_types: { in_app_feed: true, email: true },
+        },
         "discussion-reply": {
           channel_types: { in_app_feed: true, email: true },
         },

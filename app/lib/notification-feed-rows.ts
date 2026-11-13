@@ -53,6 +53,11 @@ const rowSentence: Record<
   NotificationKey,
   (actor: string, data: NotificationData) => SentencePart[]
 > = {
+  "discussion-question": (actor, data) => [
+    { text: actor, bold: true },
+    { text: " asked a question on " },
+    { text: text(data.lesson_title), bold: true },
+  ],
   "discussion-reply": (actor, data) => [
     { text: actor, bold: true },
     { text: " replied to your question on " },
