@@ -7,7 +7,10 @@ import {
   defaultKnockGateway,
   type KnockGateway,
 } from "~/lib/knock-gateway.server";
-import { notifyDiscussionReply } from "~/lib/notifications.server";
+import {
+  notifyDiscussionQuestion,
+  notifyDiscussionReply,
+} from "~/lib/notifications.server";
 
 // ─── Discussion comments ───
 // Posting a Discussion Question or Discussion Reply. Both the lesson page and
@@ -79,6 +82,8 @@ export async function createComment(
 
   if (comment.parentId !== null) {
     await notifyDiscussionReply(db, comment.id, gateway);
+  } else {
+    await notifyDiscussionQuestion(db, comment.id, gateway);
   }
 
   return comment;

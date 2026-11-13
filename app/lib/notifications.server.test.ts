@@ -206,6 +206,143 @@ describe("Discussion Reply", () => {
   });
 });
 
+describe("New Discussion Question", () => {
+  function questionTriggers(gateway: ReturnType<typeof recordingGateway>) {
+    return gateway.calls.filter(
+      (call) =>
+        call.method === "trigger" && call.workflowKey === "discussion-question"
+    );
+  }
+
+  it("notifies the course's Instructor when a Student asks", async () => {
+    const gateway = recordingGateway();
+
+    const question = await createComment(
+      db,
+      asker.id,
+      lessonId,
+      null,
+      "Why does **this** print `undefined`?",
+      gateway
+    );
+
+    expect(gateway.calls).toEqual([
+      {
+        method: "trigger",
+        workflowKey: "discussion-question",
+        idempotencyKey: `discussion-question:${question.id}`,
+        payload: {
+          recipients: [
+            {
+              id: String(base.instructor.id),
+              name: "Test Instructor",
+              email: "instructor@example.com",
+            },
+          ],
+          actor: {
+            id: String(asker.id),
+            name: "Test User",
+            email: "test@example.com",
+          },
+          data: {
+            course_title: base.course.title,
+            lesson_title: "Closures",
+            excerpt: "Why does this print undefined?",
+            url: "/instructor/questions",
+          },
+        },
+      },
+    ]);
+  });
+
+  it("notifies the Instructor when a Platform Admin asks", async () => {
+    const admin = db
+      .insert(schema.users)
+      .values({
+        name: "Ada Admin",
+        email: "ada@example.com",
+        role: UserRole.Admin,
+      })
+      .returning()
+      .get();
+    const gateway = recordingGateway();
+
+    const question = await createComment(
+      db,
+      admin.id,
+      lessonId,
+      null,
+      "Is this lesson up to date?",
+      gateway
+    );
+
+    expect(questionTriggers(gateway)).toEqual([
+      expect.objectContaining({
+        idempotencyKey: `discussion-question:${question.id}`,
+        payload: expect.objectContaining({
+          recipients: [
+            expect.objectContaining({ id: String(base.instructor.id) }),
+          ],
+          actor: expect.objectContaining({
+            id: String(admin.id),
+            name: "Ada Admin",
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it("notifies no one when the Instructor asks on their own course", async () => {
+    const gateway = recordingGateway();
+
+    await createComment(
+      db,
+      base.instructor.id,
+      lessonId,
+      null,
+      "Any questions so far?",
+      gateway
+    );
+
+    expect(gateway.calls).toEqual([]);
+  });
+
+  it("does not send a New Discussion Question for a reply", async () => {
+    const question = await askQuestion();
+    const gateway = recordingGateway();
+
+    await createComment(
+      db,
+      replier.id,
+      lessonId,
+      question.id,
+      "Me too",
+      gateway
+    );
+
+    expect(questionTriggers(gateway)).toEqual([]);
+  });
+
+  it("still posts the question and logs the keys when Knock fails", async () => {
+    const gateway = recordingGateway({ failWith: new Error("Knock is down") });
+
+    const question = await createComment(
+      db,
+      asker.id,
+      lessonId,
+      null,
+      "Still asking",
+      gateway
+    );
+
+    expect(question.body).toBe("Still asking");
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    const logged = errorLog.mock.calls[0].map(String).join(" ");
+    expect(logged).toContain(`discussion-question:${question.id}`);
+    expect(logged).toContain("Knock is down");
+  });
+});
+
 describe("notificationTriggers", () => {
   it("has a trigger function for every catalogue entry", () => {
     expect(Object.keys(notificationTriggers).sort()).toEqual(

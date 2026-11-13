@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schemas.knock.app/cli/workflow.json",
+  "name": "New Discussion Question",
+  "description": "Someone other than the course's Instructor asked a Discussion Question on one of its lessons. Triggered by notifyDiscussionQuestion in app/lib/notifications.server.ts; defaults live in app/lib/notification-catalogue.ts.",
+  "categories": [],
+  "trigger_data_json_schema": {
+    "type": "object",
+    "required": ["course_title", "lesson_title", "excerpt", "url"],
+    "properties": {
+      "course_title": { "type": "string" },
+      "lesson_title": { "type": "string" },
+      "excerpt": { "type": "string" },
+      "url": { "type": "string" }
+    }
+  },
+  "steps": [
+    {
+      "ref": "in_app_feed_1",
+      "type": "channel",
+      "channel_key": "in-app-feed",
+      "template": {
+        "action_url": "{{ data.url }}",
+        "markdown_body@": "in_app_feed_1/markdown_body.md"
+      }
+    },
+    {
+      "ref": "email_1",
+      "type": "channel",
+      "channel_key": "resend",
+      "template": {
+        "subject": "{{ actor.name }} asked a question on {{ data.lesson_title }}",
+        "settings": {
+          "layout_key": "cadence",
+          "pre_content": "{% capture preview_text %}{{ data.excerpt }}{% endcapture %}"
+        },
+        "html_body@": "email_1/html_body.html"
+      }
+    }
+  ]
+}
