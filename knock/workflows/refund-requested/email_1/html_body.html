@@ -1,0 +1,5 @@
+We have your Refund Request for <strong>{{ data.course_title | escape }}</strong>
+{% render "cadence-details", amount: data.amount, purchased_on: data.purchased_on, note_label: "Reason", note: data.reason %}
+<p style="margin:14px 0 0;font-size:14px;line-height:20px;color:#525252">A Platform Admin reviews every Refund Request. We'll let you know when it's decided.</p>
+{%- assign cta_url = vars.app_url | append: data.url %}
+{% render "cadence-cta", label: "View refund request", url: cta_url %}

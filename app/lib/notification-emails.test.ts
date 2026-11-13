@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { notificationCatalogue } from "./notification-catalogue";
+import {
+  emailOnlyWorkflows,
+  notificationCatalogue,
+} from "./notification-catalogue";
 import {
   renderEmail,
   renderPartial,
@@ -33,6 +36,21 @@ function preheaderOf(html: string) {
     /<div[^>]*data-preheader[^>]*>([\s\S]*?)<\/div>/
   );
   return match ? textOf(match[1]) : null;
+}
+
+// The rows of the Amount / Purchased / Reason-or-Note table.
+function detailRowsOf(html: string) {
+  const amount = html.indexOf(">Amount<");
+  if (amount === -1) return [];
+  const table = html.slice(
+    html.lastIndexOf("<table", amount),
+    html.indexOf("</table>", amount)
+  );
+  return [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) =>
+    [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(([, cell]) =>
+      textOf(cell).replace(/&#39;/g, "'")
+    )
+  );
 }
 
 describe("Discussion Reply email", () => {
@@ -310,19 +328,6 @@ describe("cadence-details partial", () => {
 
 describe("Refund Request decision emails", () => {
   // The rows of the details table (the one holding "Amount").
-  function detailRowsOf(html: string) {
-    const amount = html.indexOf(">Amount<");
-    if (amount === -1) return [];
-    const table = html.slice(
-      html.lastIndexOf("<table", amount),
-      html.indexOf("</table>", amount)
-    );
-    return [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) =>
-      [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(([, cell]) =>
-        textOf(cell).replace(/&#39;/g, "'")
-      )
-    );
-  }
 
   const decided = (decision_note: string, url: string): EmailContext => ({
     recipient: { id: "1", name: "Test User", email: "test@example.com" },
@@ -446,5 +451,160 @@ describe("Refund Request decision emails", () => {
       expect(html).not.toContain("<b>Rust</b>");
       expect(html).not.toContain("<script>");
     });
+  });
+});
+
+describe("New Open Refund Request email", () => {
+  const context: EmailContext = {
+    recipient: { id: "9", name: "Pat Admin", email: "pat@example.com" },
+    actor: { id: "1", name: "Sam Student", email: "sam@example.com" },
+    data: {
+      course_title: "Rust & You",
+      amount: "$79.00",
+      purchased_on: "Oct 3, 2026",
+      reason: "It was not what I expected.",
+      url: "/admin/refunds",
+    },
+    vars,
+  };
+
+  it("uses the feed sentence in plain text as the subject", async () => {
+    const email = await renderEmail("refund-request-opened", context);
+
+    expect(email.subject).toBe("Sam Student requested a refund for Rust & You");
+  });
+
+  it("uses the amount and reason as the preheader", async () => {
+    const email = await renderEmail("refund-request-opened", context);
+
+    expect(preheaderOf(email.html)).toBe(
+      "$79.00 · It was not what I expected."
+    );
+  });
+
+  it("shows the sentence and an Amount / Purchased / Reason table", async () => {
+    const html = (await renderEmail("refund-request-opened", context)).html;
+
+    expect(textOf(html)).toContain(
+      "SS Sam Student requested a refund for Rust & You"
+    );
+    expect(detailRowsOf(html)).toEqual([
+      ["Amount", "$79.00"],
+      ["Purchased", "Oct 3, 2026"],
+      ["Reason", "It was not what I expected."],
+    ]);
+  });
+
+  it("links the feed's CTA label to the absolute /admin/refunds URL", async () => {
+    const links = linksIn(
+      (await renderEmail("refund-request-opened", context)).html
+    );
+
+    expect(links).toContainEqual({
+      href: "https://cadence.example/admin/refunds",
+      label: notificationCatalogue["refund-request-opened"].ctaLabel,
+    });
+  });
+
+  it("escapes HTML in the actor name, course title and reason", async () => {
+    const html = (
+      await renderEmail("refund-request-opened", {
+        ...context,
+        actor: { ...context.actor, name: "<i>Sam</i>" },
+        data: {
+          ...context.data,
+          course_title: "<b>Rust</b>",
+          reason: "<script>",
+        },
+      })
+    ).html;
+
+    expect(html).not.toContain("<i>Sam</i>");
+    expect(html).not.toContain("<b>Rust</b>");
+    expect(html).not.toContain("<script>");
+  });
+});
+
+describe("Refund requested receipt email", () => {
+  const context: EmailContext = {
+    recipient: { id: "1", name: "Sam Student", email: "sam@example.com" },
+    actor: {},
+    data: {
+      course_title: "Rust & You",
+      amount: "$79.00",
+      purchased_on: "Oct 3, 2026",
+      reason: "It was not what I expected.",
+      url: "/settings",
+    },
+    vars,
+  };
+
+  it("has a plain-text subject naming the course", async () => {
+    const email = await renderEmail("refund-requested", context);
+
+    expect(email.subject).toBe("Refund requested for Rust & You");
+  });
+
+  it("says it will let the buyer know, without promising another email", async () => {
+    const html = (await renderEmail("refund-requested", context)).html;
+    const text = textOf(html).replace(/&#39;/g, "'");
+
+    expect(preheaderOf(html)?.replace(/&#39;/g, "'")).toBe(
+      "We'll let you know when it's decided."
+    );
+    expect(text).toMatch(
+      /Cadence We have your Refund Request for Rust & You .*We'll let you know when it's decided\./
+    );
+    expect(text).not.toMatch(/email you/i);
+  });
+
+  it("shows no avatar, since the buyer caused it themselves", async () => {
+    const html = (await renderEmail("refund-requested", context)).html;
+
+    expect(html).not.toContain("border-radius:20px");
+  });
+
+  it("shows an Amount / Purchased / Reason table", async () => {
+    const html = (await renderEmail("refund-requested", context)).html;
+
+    expect(detailRowsOf(html)).toEqual([
+      ["Amount", "$79.00"],
+      ["Purchased", "Oct 3, 2026"],
+      ["Reason", "It was not what I expected."],
+    ]);
+  });
+
+  it("links View refund request to the absolute URL from the data", async () => {
+    for (const url of ["/settings", "/team"]) {
+      const links = linksIn(
+        (
+          await renderEmail("refund-requested", {
+            ...context,
+            data: { ...context.data, url },
+          })
+        ).html
+      );
+
+      expect(links).toContainEqual({
+        href: `https://cadence.example${url}`,
+        label: emailOnlyWorkflows["refund-requested"].ctaLabel,
+      });
+    }
+  });
+
+  it("escapes HTML in the course title and reason", async () => {
+    const html = (
+      await renderEmail("refund-requested", {
+        ...context,
+        data: {
+          ...context.data,
+          course_title: "<b>Rust</b>",
+          reason: "<script>",
+        },
+      })
+    ).html;
+
+    expect(html).not.toContain("<b>Rust</b>");
+    expect(html).not.toContain("<script>");
   });
 });

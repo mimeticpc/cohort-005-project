@@ -11,6 +11,8 @@ import {
 import {
   notifyRefundRequestApproved,
   notifyRefundRequestDeclined,
+  notifyRefundRequestOpened,
+  sendRefundRequestedReceipt,
 } from "./notifications.server";
 
 // Refund Request approved / declined: the buyer (the Student, or the Team
@@ -291,6 +293,191 @@ describe("refund decision failures", () => {
 
     await expect(
       notifyRefundRequestDeclined(db, id, null)
+    ).resolves.toBeUndefined();
+    expect(console.warn).toHaveBeenCalledOnce();
+  });
+});
+
+function addPlatformAdmin(name: string, email: string) {
+  return db
+    .insert(schema.users)
+    .values({ name, email, role: UserRole.Admin })
+    .returning()
+    .get();
+}
+
+describe("New Open Refund Request", () => {
+  it("tells every Platform Admin who asked, for which course, the amount and the reason", async () => {
+    const other = addPlatformAdmin("Ola Admin", "ola@example.com");
+    const id = raise(buyForSelf(base.user.id).id, base.user.id);
+    const gateway = recordingGateway();
+
+    await notifyRefundRequestOpened(db, id, gateway);
+
+    expect(gateway.calls).toEqual([
+      {
+        method: "trigger",
+        workflowKey: "refund-request-opened",
+        idempotencyKey: `refund-request-opened:${id}`,
+        payload: {
+          recipients: [
+            admin(),
+            { id: String(other.id), name: "Ola Admin", email: "ola@example.com" },
+          ],
+          actor: student(),
+          data: {
+            course_title: "Test Course",
+            amount: "$79.00",
+            purchased_on: "Oct 3, 2026",
+            reason: "It was not what I expected.",
+            url: "/admin/refunds",
+          },
+        },
+      },
+    ]);
+  });
+
+  it("leaves out the Platform Admin who raised the request", async () => {
+    const other = addPlatformAdmin("Ola Admin", "ola@example.com");
+    const id = raise(buyForSelf(platformAdmin.id).id, platformAdmin.id);
+    const gateway = recordingGateway();
+
+    await notifyRefundRequestOpened(db, id, gateway);
+
+    expect(gateway.calls).toHaveLength(1);
+    expect(gateway.calls[0]).toMatchObject({
+      payload: {
+        recipients: [{ id: String(other.id) }],
+        actor: { id: String(platformAdmin.id) },
+      },
+    });
+  });
+
+  it("sends nothing when the only Platform Admin raised it", async () => {
+    const id = raise(buyForSelf(platformAdmin.id).id, platformAdmin.id);
+    const gateway = recordingGateway();
+
+    await notifyRefundRequestOpened(db, id, gateway);
+
+    expect(gateway.calls).toEqual([]);
+  });
+
+  it("tells Platform Admins about a Team Licence request from its Team Admin", async () => {
+    const teamAdmin = addTeamAdmin();
+    const id = raise(buySeats(teamAdmin.id, 3).id, teamAdmin.id);
+    const gateway = recordingGateway();
+
+    await notifyRefundRequestOpened(db, id, gateway);
+
+    expect(gateway.calls[0]).toMatchObject({
+      payload: {
+        recipients: [{ id: String(platformAdmin.id) }],
+        actor: { id: String(teamAdmin.id) },
+        data: { amount: "$150.00" },
+      },
+    });
+  });
+
+  it("still sends after another Platform Admin decided the request", async () => {
+    const id = raise(buyForSelf(base.user.id).id, base.user.id);
+    approve(id, null);
+    const gateway = recordingGateway();
+
+    await notifyRefundRequestOpened(db, id, gateway);
+
+    expect(gateway.calls[0]).toMatchObject({
+      idempotencyKey: `refund-request-opened:${id}`,
+    });
+  });
+
+  it("resolves and logs when Knock fails", async () => {
+    const id = raise(buyForSelf(base.user.id).id, base.user.id);
+    const gateway = recordingGateway({ failWith: new Error("Knock is down") });
+
+    await expect(
+      notifyRefundRequestOpened(db, id, gateway)
+    ).resolves.toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `workflow=refund-request-opened idempotencyKey=refund-request-opened:${id}`
+      ),
+      expect.any(Error)
+    );
+  });
+});
+
+describe("Refund requested receipt", () => {
+  it("emails the buyer the request's details, with no actor, linking to /settings", async () => {
+    const id = raise(buyForSelf(base.user.id).id, base.user.id);
+    const gateway = recordingGateway();
+
+    await sendRefundRequestedReceipt(db, id, gateway);
+
+    expect(gateway.calls).toEqual([
+      {
+        method: "trigger",
+        workflowKey: "refund-requested",
+        idempotencyKey: `refund-requested:${id}`,
+        payload: {
+          recipients: [student()],
+          data: {
+            course_title: "Test Course",
+            amount: "$79.00",
+            purchased_on: "Oct 3, 2026",
+            reason: "It was not what I expected.",
+            url: "/settings",
+          },
+        },
+      },
+    ]);
+  });
+
+  it("links a Team Licence receipt to /team", async () => {
+    const teamAdmin = addTeamAdmin();
+    const id = raise(buySeats(teamAdmin.id, 2).id, teamAdmin.id);
+    const gateway = recordingGateway();
+
+    await sendRefundRequestedReceipt(db, id, gateway);
+
+    expect(gateway.calls[0]).toMatchObject({
+      payload: {
+        recipients: [{ id: String(teamAdmin.id) }],
+        data: { url: "/team", amount: "$100.00" },
+      },
+    });
+  });
+
+  it("emails a Platform Admin their own receipt", async () => {
+    const id = raise(buyForSelf(platformAdmin.id).id, platformAdmin.id);
+    const gateway = recordingGateway();
+
+    await sendRefundRequestedReceipt(db, id, gateway);
+
+    expect(gateway.calls[0]).toMatchObject({
+      payload: { recipients: [admin()] },
+    });
+  });
+
+  it("resolves and logs when Knock fails", async () => {
+    const id = raise(buyForSelf(base.user.id).id, base.user.id);
+    const gateway = recordingGateway({ failWith: new Error("Knock is down") });
+
+    await expect(
+      sendRefundRequestedReceipt(db, id, gateway)
+    ).resolves.toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `workflow=refund-requested idempotencyKey=refund-requested:${id}`
+      ),
+      expect.any(Error)
+    );
+  });
+
+  it("does nothing when Knock isn't configured", async () => {
+    const id = raise(buyForSelf(base.user.id).id, base.user.id);
+
+    await expect(
+      sendRefundRequestedReceipt(db, id, null)
     ).resolves.toBeUndefined();
     expect(console.warn).toHaveBeenCalledOnce();
   });

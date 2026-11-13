@@ -9,6 +9,8 @@
 //   2. PUT /v1/environments/{slug}/defaults with the default Notification
 //      Preferences generated from app/lib/notification-catalogue.ts. The PUT
 //      replaces the whole set, so every catalogue entry is sent every time.
+//      Email-only workflows (the "Refund requested" receipt) are pushed in
+//      step 1 but never get a default: they have no Notification Preference.
 //
 // Needs KNOCK_SERVICE_TOKEN (from the environment or .env). Run by hand for
 // Development; a required deploy step for Production.

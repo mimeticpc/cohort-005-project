@@ -13,6 +13,7 @@ import {
   refunds,
   teamMembers,
   TeamMemberRole,
+  UserRole,
   users,
 } from "~/db/schema";
 import { commentExcerpt } from "~/lib/comment-markdown.server";
@@ -21,9 +22,11 @@ import {
   defaultKnockGateway,
   type KnockGateway,
   type KnockUser,
+  type TriggerPayload,
 } from "~/lib/knock-gateway.server";
 import {
   idempotencyKey,
+  type EmailOnlyKey,
   type NotificationKey,
 } from "~/lib/notification-catalogue";
 
@@ -55,6 +58,31 @@ export function toKnockUser(user: User): KnockUser {
   };
 }
 
+// Triggers a workflow, or does nothing when Knock isn't configured. Never
+// throws: errors are logged with the workflow and idempotency key.
+async function deliver(
+  gateway: KnockGateway | null,
+  key: NotificationKey | EmailOnlyKey,
+  idempotency: string,
+  payload: TriggerPayload
+) {
+  if (!gateway) {
+    console.warn(
+      `[notifications] KNOCK_* env vars are not set; skipped ${idempotency}`
+    );
+    return;
+  }
+
+  try {
+    await gateway.trigger(key, payload, idempotency);
+  } catch (error) {
+    console.error(
+      `[notifications] trigger failed workflow=${key} idempotencyKey=${idempotency}:`,
+      error
+    );
+  }
+}
+
 async function send(
   gateway: KnockGateway | null,
   key: NotificationKey,
@@ -63,33 +91,14 @@ async function send(
   recipients: User[],
   data: Record<string, string>
 ) {
-  const idempotency = idempotencyKey(key, rowId);
-  if (!gateway) {
-    console.warn(
-      `[notifications] KNOCK_* env vars are not set; skipped ${idempotency}`
-    );
-    return;
-  }
-
   const others = recipients.filter((user) => user.id !== actor.id);
-  if (others.length === 0) return;
+  if (gateway && others.length === 0) return;
 
-  try {
-    await gateway.trigger(
-      key,
-      {
-        recipients: others.map(toKnockUser),
-        actor: toKnockUser(actor),
-        data,
-      },
-      idempotency
-    );
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=${key} idempotencyKey=${idempotency}:`,
-      error
-    );
-  }
+  await deliver(gateway, key, idempotencyKey(key, rowId), {
+    recipients: others.map(toKnockUser),
+    actor: toKnockUser(actor),
+    data,
+  });
 }
 
 export function lessonDiscussionUrl(courseSlug: string, lessonId: number) {
@@ -233,6 +242,116 @@ export const notifyRefundRequestDeclined: NotificationTrigger = (
   gateway = defaultKnockGateway()
 ) =>
   notifyRefundDecision(db, "refund-request-declined", refundRequestId, gateway);
+
+// The Refund Request with what its emails and rows show about it.
+function refundRequestDetails(db: Db, refundRequestId: number) {
+  const row = db
+    .select({
+      reason: refunds.reason,
+      purchaseId: purchases.id,
+      buyerId: purchases.userId,
+      amountPaid: purchases.amountPaid,
+      purchasedAt: purchases.createdAt,
+      courseTitle: courses.title,
+    })
+    .from(refunds)
+    .innerJoin(purchases, eq(refunds.purchaseId, purchases.id))
+    .innerJoin(courses, eq(purchases.courseId, courses.id))
+    .where(eq(refunds.id, refundRequestId))
+    .get();
+  if (!row) return undefined;
+  const buyer = db.select().from(users).where(eq(users.id, row.buyerId)).get();
+  if (!buyer) return undefined;
+  return {
+    ...row,
+    buyer,
+    data: {
+      course_title: row.courseTitle,
+      amount: formatPrice(row.amountPaid),
+      purchased_on: purchaseDate(row.purchasedAt),
+      reason: row.reason,
+    },
+  };
+}
+
+// New Open Refund Request: tells every Platform Admin except the buyer (a
+// Platform Admin can buy too) that a Refund Request was raised. Sent whatever
+// the request's status is now, so a row never changes after a decision.
+// Call after raiseRefundRequest succeeds.
+export const notifyRefundRequestOpened: NotificationTrigger = async (
+  db,
+  refundRequestId,
+  gateway = defaultKnockGateway()
+) => {
+  try {
+    const request = refundRequestDetails(db, refundRequestId);
+    if (!request) return;
+
+    const platformAdmins = db
+      .select()
+      .from(users)
+      .where(eq(users.role, UserRole.Admin))
+      .all();
+
+    await send(
+      gateway,
+      "refund-request-opened",
+      refundRequestId,
+      request.buyer,
+      platformAdmins,
+      { ...request.data, url: "/admin/refunds" }
+    );
+  } catch (error) {
+    console.error(
+      `[notifications] trigger failed workflow=refund-request-opened idempotencyKey=${idempotencyKey("refund-request-opened", refundRequestId)}:`,
+      error
+    );
+  }
+};
+
+// "Refund requested" receipt: an email-only workflow (ADR 0015) that emails
+// the buyer every time they raise a Refund Request. No actor (they caused it
+// themselves), no feed entry, no Notification Preference. "View refund
+// request" goes where the buyer raised it: /team for a Team Licence,
+// /settings otherwise. Call after raiseRefundRequest succeeds.
+export async function sendRefundRequestedReceipt(
+  db: Db,
+  refundRequestId: number,
+  gateway: KnockGateway | null = defaultKnockGateway()
+) {
+  const idempotency = idempotencyKey("refund-requested", refundRequestId);
+  try {
+    const request = refundRequestDetails(db, refundRequestId);
+    if (!request) return;
+
+    const seat = db
+      .select({ id: coupons.id })
+      .from(coupons)
+      .where(eq(coupons.purchaseId, request.purchaseId))
+      .get();
+
+    await deliver(gateway, "refund-requested", idempotency, {
+      recipients: [toKnockUser(request.buyer)],
+      data: { ...request.data, url: seat ? "/team" : "/settings" },
+    });
+  } catch (error) {
+    console.error(
+      `[notifications] trigger failed workflow=refund-requested idempotencyKey=${idempotency}:`,
+      error
+    );
+  }
+}
+
+// A raised Refund Request fires the New Open Refund Request Notification and
+// the buyer's receipt.
+export async function notifyRefundRequestRaised(
+  db: Db,
+  refundRequestId: number,
+  gateway: KnockGateway | null = defaultKnockGateway()
+) {
+  await notifyRefundRequestOpened(db, refundRequestId, gateway);
+  await sendRefundRequestedReceipt(db, refundRequestId, gateway);
+}
 
 // New Discussion Question: tells the course's Instructor that someone else
 // (a Student, or a Platform Admin) asked a question on one of its lessons.
@@ -417,6 +536,7 @@ export const notificationTriggers = {
   "new-enrollment": notifyNewEnrollment,
   "refund-request-approved": notifyRefundRequestApproved,
   "refund-request-declined": notifyRefundRequestDeclined,
+  "refund-request-opened": notifyRefundRequestOpened,
 } satisfies Record<NotificationKey, NotificationTrigger>;
 
 // ─── Notification Feed config ───

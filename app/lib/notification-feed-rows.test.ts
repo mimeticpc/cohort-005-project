@@ -210,6 +210,34 @@ describe("feedRow for Refund Request decisions", () => {
   });
 });
 
+describe("feedRow for New Open Refund Request", () => {
+  it("says who asked for which course, with the reason, linking to /admin/refunds", () => {
+    expect(
+      feedRow({
+        source: { key: "refund-request-opened" },
+        actors: [{ id: "1", name: "Sam Student" }],
+        data: {
+          course_title: "Intro to Cooking",
+          amount: "$79.00",
+          purchased_on: "Oct 3, 2026",
+          reason: "Not what I expected.",
+          url: "/admin/refunds",
+        },
+        read_at: null,
+      })
+    ).toMatchObject({
+      sentence: [
+        { text: "Sam Student", bold: true },
+        { text: " requested a refund for " },
+        { text: "Intro to Cooking", bold: true },
+      ],
+      excerpt: "Not what I expected.",
+      ctaLabel: "Review",
+      target: "/admin/refunds",
+    });
+  });
+});
+
 describe("timeAgo", () => {
   const now = new Date("2026-11-12T12:00:00Z");
   const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();

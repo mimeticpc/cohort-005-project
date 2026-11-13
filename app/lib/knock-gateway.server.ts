@@ -21,7 +21,9 @@ export type KnockUser = {
 
 export type TriggerPayload = {
   recipients: KnockUser[];
-  actor: KnockUser;
+  // Left out for email the recipient caused themselves (an email-only
+  // workflow such as the "Refund requested" receipt).
+  actor?: KnockUser;
   data: Record<string, string>;
 };
 

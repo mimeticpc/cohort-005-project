@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schemas.knock.app/cli/workflow.json",
+  "name": "Refund requested receipt",
+  "description": "Email-only (ADR 0015): the buyer's receipt each time they raise a Refund Request. Not a Notification: no feed step, no category, no Notification Preference, so it always sends. Triggered by sendRefundRequestedReceipt in app/lib/notifications.server.ts; listed in emailOnlyWorkflows in app/lib/notification-catalogue.ts.",
+  "categories": [],
+  "trigger_data_json_schema": {
+    "type": "object",
+    "required": ["course_title", "amount", "purchased_on", "reason", "url"],
+    "properties": {
+      "course_title": { "type": "string" },
+      "amount": { "type": "string" },
+      "purchased_on": { "type": "string" },
+      "reason": { "type": "string" },
+      "url": { "type": "string" }
+    }
+  },
+  "steps": [
+    {
+      "ref": "email_1",
+      "type": "channel",
+      "channel_key": "resend",
+      "template": {
+        "subject": "Refund requested for {{ data.course_title }}",
+        "settings": {
+          "layout_key": "cadence",
+          "pre_content": "{% capture preview_text %}We'll let you know when it's decided.{% endcapture %}"
+        },
+        "html_body@": "email_1/html_body.html"
+      }
+    }
+  ]
+}

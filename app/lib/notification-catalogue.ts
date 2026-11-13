@@ -38,6 +38,7 @@ const everyone = () => true;
 // among them, who buy Team Licences). Compared as a string so this module
 // stays free of the schema's runtime code (it ships to the browser).
 const buyers = (viewer: Viewer) => `${viewer.role}` === "student";
+const platformAdmins = (viewer: Viewer) => `${viewer.role}` === "admin";
 
 // Only same-origin paths: "/x", never "//host" or "https://…".
 function appPath(value: unknown): string | null {
@@ -118,9 +119,43 @@ export const notificationCatalogue = {
     idempotencyKeyPrefix: "refund-request-decided",
     visibleTo: buyers,
   },
+  "refund-request-opened": {
+    key: "refund-request-opened",
+    name: "New Open Refund Request",
+    recipient: "Every Platform Admin, except the one who raised it",
+    defaults: { in_app_feed: true, email: true },
+    ctaLabel: "Review",
+    target: (data) => appPath(data.url),
+    idempotencyKeyPrefix: "refund-request-opened",
+    visibleTo: platformAdmins,
+  },
 } as const satisfies { [K in string]: NotificationEntry<K> };
 
 export type NotificationKey = keyof typeof notificationCatalogue;
+
+// ─── Email-only workflows (ADR 0015) ───
+// Email the recipient caused themselves. Not Notifications: no feed step, no
+// category, no Notification Preference, so never in the catalogue above and
+// never in environmentDefaults(). They always send.
+export type EmailOnlyWorkflow<Key extends string = string> = {
+  key: Key;
+  name: string;
+  recipient: string;
+  ctaLabel: string;
+  idempotencyKeyPrefix: string;
+};
+
+export const emailOnlyWorkflows = {
+  "refund-requested": {
+    key: "refund-requested",
+    name: "Refund requested receipt",
+    recipient: "The buyer who raised the Refund Request",
+    ctaLabel: "View refund request",
+    idempotencyKeyPrefix: "refund-requested",
+  },
+} as const satisfies { [K in string]: EmailOnlyWorkflow<K> };
+
+export type EmailOnlyKey = keyof typeof emailOnlyWorkflows;
 
 const entries: NotificationEntry<NotificationKey>[] = Object.values(
   notificationCatalogue
@@ -130,8 +165,15 @@ export function visibleNotifications(viewer: Viewer) {
   return entries.filter((entry) => entry.visibleTo(viewer));
 }
 
-export function idempotencyKey(key: NotificationKey, rowId: number) {
-  return `${notificationCatalogue[key].idempotencyKeyPrefix}:${rowId}`;
+export function idempotencyKey(
+  key: NotificationKey | EmailOnlyKey,
+  rowId: number
+) {
+  const entry =
+    key in emailOnlyWorkflows
+      ? emailOnlyWorkflows[key as EmailOnlyKey]
+      : notificationCatalogue[key as NotificationKey];
+  return `${entry.idempotencyKeyPrefix}:${rowId}`;
 }
 
 // The Knock environment's default PreferenceSet. Written in full by

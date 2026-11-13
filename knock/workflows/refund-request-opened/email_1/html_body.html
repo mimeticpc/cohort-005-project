@@ -1,0 +1,4 @@
+<strong>{{ actor.name | escape }}</strong> requested a refund for <strong>{{ data.course_title | escape }}</strong>
+{% render "cadence-details", amount: data.amount, purchased_on: data.purchased_on, note_label: "Reason", note: data.reason %}
+{%- assign cta_url = vars.app_url | append: data.url %}
+{% render "cadence-cta", label: "Review", url: cta_url %}

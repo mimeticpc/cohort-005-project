@@ -2,7 +2,9 @@ import { existsSync, readdirSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { UserRole } from "~/db/schema";
 import {
+  emailOnlyWorkflows,
   environmentDefaults,
+  idempotencyKey,
   notificationCatalogue,
   visibleNotifications,
   type NotificationEntry,
@@ -196,15 +198,80 @@ describe("Refund Request approved / declined", () => {
   });
 });
 
+describe("New Open Refund Request", () => {
+  const entry = notificationCatalogue["refund-request-opened"];
+
+  it("goes to the feed and by email, both on by default, with a Review CTA to /admin/refunds", () => {
+    expect(entry).toMatchObject({
+      idempotencyKeyPrefix: "refund-request-opened",
+      ctaLabel: "Review",
+      defaults: { in_app_feed: true, email: true },
+    });
+    expect(entry.target({ url: "/admin/refunds" })).toBe("/admin/refunds");
+    expect(entry.target({ url: "https://evil.example" })).toBeNull();
+  });
+
+  it("is shown only to Platform Admins", () => {
+    const keysFor = (role: UserRole, isTeamAdmin = false) =>
+      visibleNotifications({ role, isTeamAdmin }).map((e) => e.key);
+
+    expect(keysFor(UserRole.Admin)).toContain("refund-request-opened");
+    expect(keysFor(UserRole.Student, true)).not.toContain(
+      "refund-request-opened"
+    );
+    expect(keysFor(UserRole.Instructor)).not.toContain(
+      "refund-request-opened"
+    );
+  });
+});
+
+describe("email-only workflows", () => {
+  it("are never in the catalogue", () => {
+    for (const key of Object.keys(emailOnlyWorkflows)) {
+      expect(Object.keys(notificationCatalogue)).not.toContain(key);
+    }
+  });
+
+  it("list the Refund requested receipt with its idempotency key", () => {
+    expect(emailOnlyWorkflows["refund-requested"]).toMatchObject({
+      ctaLabel: "View refund request",
+    });
+    expect(idempotencyKey("refund-requested", 12)).toBe("refund-requested:12");
+  });
+
+  it.each(Object.keys(emailOnlyWorkflows).map((key) => [key] as const))(
+    "%s has only an email step, with the shared layout and no category",
+    (key) => {
+      const workflow = readWorkflow(key) as ReturnType<typeof readWorkflow> & {
+        categories?: string[];
+      };
+      const channelSteps = workflow.steps.filter(
+        (step) => step.type === "channel"
+      );
+
+      expect(workflow.categories ?? []).toEqual([]);
+      expect(channelSteps.map((step) => step.channel_key)).toEqual([
+        EMAIL_CHANNEL_KEY,
+      ]);
+      expect(channelSteps[0].template.settings?.layout_key).toBe(
+        EMAIL_LAYOUT_KEY
+      );
+    }
+  );
+});
+
 describe("knock/workflows", () => {
-  it("defines a workflow in the repo for every catalogue entry", () => {
+  it("defines a workflow in the repo for every catalogue entry and email-only workflow, and nothing else", () => {
     const workflowsDir = new URL("../../knock/workflows/", import.meta.url);
     const workflowKeys = readdirSync(workflowsDir).filter((name) =>
       existsSync(new URL(`${name}/workflow.json`, workflowsDir))
     );
 
     expect(workflowKeys.sort()).toEqual(
-      Object.keys(notificationCatalogue).sort()
+      [
+        ...Object.keys(notificationCatalogue),
+        ...Object.keys(emailOnlyWorkflows),
+      ].sort()
     );
   });
 
@@ -260,7 +327,17 @@ describe("environmentDefaults", () => {
         "refund-request-declined": {
           channel_types: { in_app_feed: true, email: true },
         },
+        "refund-request-opened": {
+          channel_types: { in_app_feed: true, email: true },
+        },
       },
     });
+  });
+
+  it("never writes a default for an email-only workflow", () => {
+    const workflows = environmentDefaults().workflows;
+    for (const key of Object.keys(emailOnlyWorkflows)) {
+      expect(workflows).not.toHaveProperty(key);
+    }
   });
 });
