@@ -7,6 +7,12 @@ import {
   visibleNotifications,
   type NotificationEntry,
 } from "./notification-catalogue";
+import {
+  channelTypeOf,
+  EMAIL_CHANNEL_KEY,
+  EMAIL_LAYOUT_KEY,
+  readWorkflow,
+} from "~/test/knock-config";
 
 const entries: NotificationEntry[] = Object.values(notificationCatalogue);
 
@@ -33,12 +39,12 @@ describe("notification catalogue", () => {
   });
 
   describe("Discussion Reply", () => {
-    it("goes to the feed, on by default, with a View reply CTA", () => {
+    it("goes to the feed and by email, both on by default, with a View reply CTA", () => {
       expect(notificationCatalogue["discussion-reply"]).toMatchObject({
         key: "discussion-reply",
         idempotencyKeyPrefix: "discussion-reply",
         ctaLabel: "View reply",
-        defaults: { in_app_feed: true },
+        defaults: { in_app_feed: true, email: true },
       });
     });
 
@@ -81,13 +87,44 @@ describe("knock/workflows", () => {
       Object.keys(notificationCatalogue).sort()
     );
   });
+
+  it.each(entries.map((entry) => [entry.key, entry] as const))(
+    "%s has one channel step per catalogue channel",
+    (key, entry) => {
+      const workflow = readWorkflow(key);
+      const stepChannels = workflow.steps
+        .filter((step) => step.type === "channel")
+        .map((step) => channelTypeOf[step.channel_key]);
+
+      expect(stepChannels.sort()).toEqual(Object.keys(entry.defaults).sort());
+    }
+  );
+
+  it.each(
+    entries
+      .filter((entry) => "email" in entry.defaults)
+      .map((entry) => [entry.key] as const)
+  )("%s emails with the shared Cadence layout", (key) => {
+    const emailStep = readWorkflow(key).steps.find(
+      (step) => step.channel_key === EMAIL_CHANNEL_KEY
+    );
+
+    expect(emailStep?.template.settings?.layout_key).toBe(EMAIL_LAYOUT_KEY);
+    expect(
+      existsSync(
+        new URL(`../../knock/layouts/${EMAIL_LAYOUT_KEY}/layout.json`, import.meta.url)
+      )
+    ).toBe(true);
+  });
 });
 
 describe("environmentDefaults", () => {
   it("sets every catalogue entry at workflow × channel_types level only", () => {
     expect(environmentDefaults()).toEqual({
       workflows: {
-        "discussion-reply": { channel_types: { in_app_feed: true } },
+        "discussion-reply": {
+          channel_types: { in_app_feed: true, email: true },
+        },
       },
     });
   });

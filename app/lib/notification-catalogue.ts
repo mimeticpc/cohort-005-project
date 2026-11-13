@@ -49,7 +49,7 @@ export const notificationCatalogue = {
     key: "discussion-reply",
     name: "Discussion Reply",
     recipient: "The Discussion Question's author",
-    defaults: { in_app_feed: true },
+    defaults: { in_app_feed: true, email: true },
     ctaLabel: "View reply",
     target: (data) => appPath(data.url),
     idempotencyKeyPrefix: "discussion-reply",

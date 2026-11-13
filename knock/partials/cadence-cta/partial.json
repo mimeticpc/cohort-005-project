@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schemas.knock.app/cli/partial.json",
+  "name": "Cadence CTA",
+  "type": "html",
+  "description": "The email card's button, labelled like the feed row's CTA. url must be absolute: {% assign cta_url = vars.app_url | append: data.url %}{% render \"cadence-cta\", label: \"View\", url: cta_url %}",
+  "content@": "content.html"
+}

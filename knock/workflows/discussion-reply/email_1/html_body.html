@@ -1,0 +1,4 @@
+<strong>{{ actor.name | escape }}</strong> replied to your question on <strong>{{ data.lesson_title | escape }}</strong>
+{% render "cadence-excerpt", text: data.excerpt %}
+{%- assign cta_url = vars.app_url | append: data.url %}
+{% render "cadence-cta", label: "View reply", url: cta_url %}

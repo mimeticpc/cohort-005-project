@@ -82,6 +82,9 @@ It needs to be public: GitHub Actions minutes are free on public repos, and the 
 You don't need these yet, but you'll be asked for them along the way. Both have a free option:
 
 - **[Knock](https://knock.app/)**, a free Developer account, when you build notifications. Its keys go in `.env`, which is gitignored: `KNOCK_SECRET_API_KEY`, `KNOCK_PUBLIC_API_KEY`, `KNOCK_SIGNING_KEY`, `KNOCK_FEED_CHANNEL_ID`, and `KNOCK_SERVICE_TOKEN` for `npm run knock:sync`. The in-app feed channel's key must be `in-app-feed` (the workflows in `knock/` reference it). Without these keys the app runs and Notifications are skipped.
+  - Email goes through **[Resend](https://resend.com/)** (free account), connected in Knock as one email channel whose key must be `resend`. In your Development environment, set its From address to `onboarding@resend.dev`, set the **To override** to your own inbox (every dev email lands there, never at seed addresses), and leave reply-to empty.
+  - Under Developers → Variables, set `app_url` (e.g. `http://localhost:5173`) and `settings_url` (e.g. `http://localhost:5173/settings#notifications`) for each environment. The email layout uses them for absolute links.
+  - `npm run knock:sync` pushes the email layout and partials too. Check each email in Knock's template preview after changing `knock/`.
 - **[tldraw](https://www.tldraw.com/)**, for whiteboarding your tasks. Any drawing app will do.
 
 ## Scripts
@@ -96,7 +99,7 @@ You don't need these yet, but you'll be asked for them along the way. Both have 
 | `npm run db:generate`        | Generate a migration from the schema         |
 | `npm run db:migrate`         | Run database migrations                      |
 | `npm run db:seed`            | Reseed the database (drops and recreates it) |
-| `npm run knock:sync [env]`   | Push `knock/` workflows and Notification defaults to Knock (needs `KNOCK_SERVICE_TOKEN`; env defaults to `development`) |
+| `npm run knock:sync [env]`   | Push `knock/` (partials, email layout, workflows) and Notification defaults to Knock (needs `KNOCK_SERVICE_TOKEN`; env defaults to `development`) |
 | `npm run reset <slug>`       | Reset your repo to a lesson checkpoint       |
 | `npm run cherry-pick <slug>` | Cherry-pick a lesson's solution              |
 | `npm run pull`               | Merge the course repo's latest `main` in     |
