@@ -157,6 +157,59 @@ describe("feedRow", () => {
   });
 });
 
+describe("feedRow for Refund Request decisions", () => {
+  const decided = (key: string, decision_note: string, url: string) => ({
+    source: { key },
+    actors: [{ id: "9", name: "Pat Admin" }],
+    data: {
+      course_title: "Intro to Cooking",
+      amount: "$79.00",
+      purchased_on: "Oct 3, 2026",
+      decision_note,
+      url,
+    },
+    read_at: null,
+  });
+
+  it("tells the buyer it was approved, with the note, linking to the dashboard", () => {
+    expect(
+      feedRow(decided("refund-request-approved", "Enjoy!", "/dashboard"))
+    ).toMatchObject({
+      sentence: [
+        { text: "Your Refund Request for " },
+        { text: "Intro to Cooking", bold: true },
+        { text: " was approved" },
+      ],
+      excerpt: "Enjoy!",
+      ctaLabel: "View",
+      target: "/dashboard",
+    });
+  });
+
+  it("leaves out the note when the Platform Admin wrote none", () => {
+    expect(
+      feedRow(decided("refund-request-approved", "", "/dashboard"))?.excerpt
+    ).toBeNull();
+  });
+
+  it("tells the buyer it was declined, with the note, linking to the course", () => {
+    expect(
+      feedRow(
+        decided("refund-request-declined", "Past half way.", "/courses/intro")
+      )
+    ).toMatchObject({
+      sentence: [
+        { text: "Your Refund Request for " },
+        { text: "Intro to Cooking", bold: true },
+        { text: " was declined" },
+      ],
+      excerpt: "Past half way.",
+      ctaLabel: "View course",
+      target: "/courses/intro",
+    });
+  });
+});
+
 describe("timeAgo", () => {
   const now = new Date("2026-11-12T12:00:00Z");
   const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();

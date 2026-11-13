@@ -307,3 +307,144 @@ describe("cadence-details partial", () => {
     expect(html).not.toContain("<img");
   });
 });
+
+describe("Refund Request decision emails", () => {
+  // The rows of the details table (the one holding "Amount").
+  function detailRowsOf(html: string) {
+    const amount = html.indexOf(">Amount<");
+    if (amount === -1) return [];
+    const table = html.slice(
+      html.lastIndexOf("<table", amount),
+      html.indexOf("</table>", amount)
+    );
+    return [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) =>
+      [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(([, cell]) =>
+        textOf(cell).replace(/&#39;/g, "'")
+      )
+    );
+  }
+
+  const decided = (decision_note: string, url: string): EmailContext => ({
+    recipient: { id: "1", name: "Test User", email: "test@example.com" },
+    actor: { id: "9", name: "Pat Admin", email: "pat@example.com" },
+    data: {
+      course_title: "Rust & You",
+      amount: "$79.00",
+      purchased_on: "Oct 3, 2026",
+      decision_note,
+      url,
+    },
+    vars,
+  });
+
+  describe("approved", () => {
+    const context = decided("Sorry it wasn't a fit.", "/dashboard");
+
+    it("uses the feed sentence in plain text as the subject", async () => {
+      const email = await renderEmail("refund-request-approved", context);
+
+      expect(email.subject).toBe(
+        "Your Refund Request for Rust & You was approved"
+      );
+    });
+
+    it("says the money is on its way in the preheader", async () => {
+      const email = await renderEmail("refund-request-approved", context);
+
+      expect(preheaderOf(email.html)).toBe("$79.00 is on its way back to you.");
+    });
+
+    it("shows the sentence and an Amount / Purchased / Note table", async () => {
+      const html = (await renderEmail("refund-request-approved", context)).html;
+
+      expect(textOf(html)).toContain(
+        "Your Refund Request for Rust & You was approved"
+      );
+      expect(detailRowsOf(html)).toEqual([
+        ["Amount", "$79.00"],
+        ["Purchased", "Oct 3, 2026"],
+        ["Note", "Sorry it wasn't a fit."],
+      ]);
+    });
+
+    it("shows a dash when there is no note", async () => {
+      const html = (
+        await renderEmail("refund-request-approved", decided("", "/dashboard"))
+      ).html;
+
+      expect(detailRowsOf(html)[2]).toEqual(["Note", "—"]);
+    });
+
+    it("links the feed's CTA label to the absolute dashboard URL", async () => {
+      const links = linksIn(
+        (await renderEmail("refund-request-approved", context)).html
+      );
+
+      expect(links).toContainEqual({
+        href: "https://cadence.example/dashboard",
+        label: notificationCatalogue["refund-request-approved"].ctaLabel,
+      });
+    });
+  });
+
+  describe("declined", () => {
+    const context = decided(
+      "You finished most of the course.",
+      "/courses/rust"
+    );
+
+    it("uses the feed sentence in plain text as the subject", async () => {
+      const email = await renderEmail("refund-request-declined", context);
+
+      expect(email.subject).toBe(
+        "Your Refund Request for Rust & You was declined"
+      );
+    });
+
+    it("uses the decision note as the preheader", async () => {
+      const email = await renderEmail("refund-request-declined", context);
+
+      expect(preheaderOf(email.html)).toBe("You finished most of the course.");
+    });
+
+    it("shows the table, then says the buyer can ask again", async () => {
+      const html = (await renderEmail("refund-request-declined", context)).html;
+
+      expect(detailRowsOf(html)).toEqual([
+        ["Amount", "$79.00"],
+        ["Purchased", "Oct 3, 2026"],
+        ["Note", "You finished most of the course."],
+      ]);
+      expect(textOf(html)).toMatch(
+        /Note You finished most of the course\. You can ask again from the course page\./
+      );
+    });
+
+    it("links the feed's CTA label to the absolute course URL", async () => {
+      const links = linksIn(
+        (await renderEmail("refund-request-declined", context)).html
+      );
+
+      expect(links).toContainEqual({
+        href: "https://cadence.example/courses/rust",
+        label: notificationCatalogue["refund-request-declined"].ctaLabel,
+      });
+    });
+
+    it("escapes HTML in the course title and the note", async () => {
+      const html = (
+        await renderEmail("refund-request-declined", {
+          ...context,
+          data: {
+            ...context.data,
+            course_title: "<b>Rust</b>",
+            decision_note: "<script>",
+          },
+        })
+      ).html;
+
+      expect(html).not.toContain("<b>Rust</b>");
+      expect(html).not.toContain("<script>");
+    });
+  });
+});

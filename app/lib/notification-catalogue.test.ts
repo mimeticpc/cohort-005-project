@@ -153,6 +153,49 @@ describe("New Enrollment", () => {
   });
 });
 
+describe("Refund Request approved / declined", () => {
+  const approved = notificationCatalogue["refund-request-approved"];
+  const declined = notificationCatalogue["refund-request-declined"];
+
+  it("go to the feed and by email, both on by default", () => {
+    expect(approved.defaults).toEqual({ in_app_feed: true, email: true });
+    expect(declined.defaults).toEqual({ in_app_feed: true, email: true });
+  });
+
+  it("share the decided idempotency key, since a request is decided once", () => {
+    expect(approved.idempotencyKeyPrefix).toBe("refund-request-decided");
+    expect(declined.idempotencyKeyPrefix).toBe("refund-request-decided");
+  });
+
+  it("use View and View course as their CTAs", () => {
+    expect(approved.ctaLabel).toBe("View");
+    expect(declined.ctaLabel).toBe("View course");
+  });
+
+  it("target the in-app URL sent in the trigger data", () => {
+    expect(approved.target({ url: "/dashboard" })).toBe("/dashboard");
+    expect(declined.target({ url: "/courses/intro" })).toBe("/courses/intro");
+    expect(declined.target({ url: "https://evil.example" })).toBeNull();
+  });
+
+  it("are shown to Students, including Team Admins, and no other role", () => {
+    const keysFor = (role: UserRole, isTeamAdmin = false) =>
+      visibleNotifications({ role, isTeamAdmin }).map((e) => e.key);
+
+    for (const keys of [
+      keysFor(UserRole.Student),
+      keysFor(UserRole.Student, true),
+    ]) {
+      expect(keys).toContain("refund-request-approved");
+      expect(keys).toContain("refund-request-declined");
+    }
+    for (const role of [UserRole.Instructor, UserRole.Admin]) {
+      expect(keysFor(role)).not.toContain("refund-request-approved");
+      expect(keysFor(role)).not.toContain("refund-request-declined");
+    }
+  });
+});
+
 describe("knock/workflows", () => {
   it("defines a workflow in the repo for every catalogue entry", () => {
     const workflowsDir = new URL("../../knock/workflows/", import.meta.url);
@@ -210,6 +253,12 @@ describe("environmentDefaults", () => {
         },
         "new-enrollment": {
           channel_types: { in_app_feed: false, email: false },
+        },
+        "refund-request-approved": {
+          channel_types: { in_app_feed: true, email: true },
+        },
+        "refund-request-declined": {
+          channel_types: { in_app_feed: true, email: true },
         },
       },
     });

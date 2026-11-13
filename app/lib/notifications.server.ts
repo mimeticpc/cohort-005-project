@@ -8,11 +8,15 @@ import {
   enrollments,
   lessons,
   modules,
+  purchases,
+  RefundStatus,
+  refunds,
   teamMembers,
   TeamMemberRole,
   users,
 } from "~/db/schema";
 import { commentExcerpt } from "~/lib/comment-markdown.server";
+import { formatPrice } from "~/lib/utils";
 import {
   defaultKnockGateway,
   type KnockGateway,
@@ -146,6 +150,89 @@ export const notifyDiscussionReply: NotificationTrigger = async (
     );
   }
 };
+
+// "Oct 3, 2026", in the server's local calendar like the refund window.
+function purchaseDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+// Refund Request approved / declined: tells the buyer (purchases.userId —
+// the Student, or the Team Admin who bought a Team Licence) that a Platform
+// Admin decided their Refund Request. Does nothing unless the request was
+// decided that way, so a stray call can't announce the wrong decision.
+async function notifyRefundDecision(
+  db: Db,
+  key: "refund-request-approved" | "refund-request-declined",
+  refundRequestId: number,
+  gateway: KnockGateway | null
+) {
+  try {
+    const row = db
+      .select({
+        status: refunds.status,
+        decisionNote: refunds.decisionNote,
+        decidedBy: refunds.resolvedByUserId,
+        buyerId: purchases.userId,
+        amountPaid: purchases.amountPaid,
+        purchasedAt: purchases.createdAt,
+        courseTitle: courses.title,
+        courseSlug: courses.slug,
+      })
+      .from(refunds)
+      .innerJoin(purchases, eq(refunds.purchaseId, purchases.id))
+      .innerJoin(courses, eq(purchases.courseId, courses.id))
+      .where(eq(refunds.id, refundRequestId))
+      .get();
+    const approved = key === "refund-request-approved";
+    const expected = approved ? RefundStatus.Approved : RefundStatus.Declined;
+    if (!row || row.status !== expected || row.decidedBy === null) return;
+
+    const actor = db
+      .select()
+      .from(users)
+      .where(eq(users.id, row.decidedBy))
+      .get();
+    const buyer = db
+      .select()
+      .from(users)
+      .where(eq(users.id, row.buyerId))
+      .get();
+    if (!actor || !buyer) return;
+
+    await send(gateway, key, refundRequestId, actor, [buyer], {
+      course_title: row.courseTitle,
+      amount: formatPrice(row.amountPaid),
+      purchased_on: purchaseDate(row.purchasedAt),
+      decision_note: row.decisionNote ?? "",
+      url: approved ? "/dashboard" : `/courses/${row.courseSlug}`,
+    });
+  } catch (error) {
+    console.error(
+      `[notifications] trigger failed workflow=${key} idempotencyKey=${idempotencyKey(key, refundRequestId)}:`,
+      error
+    );
+  }
+}
+
+// Call after approveRefundRequest succeeds, outside its transaction.
+export const notifyRefundRequestApproved: NotificationTrigger = (
+  db,
+  refundRequestId,
+  gateway = defaultKnockGateway()
+) =>
+  notifyRefundDecision(db, "refund-request-approved", refundRequestId, gateway);
+
+// Call after declineRefundRequest succeeds, outside its transaction.
+export const notifyRefundRequestDeclined: NotificationTrigger = (
+  db,
+  refundRequestId,
+  gateway = defaultKnockGateway()
+) =>
+  notifyRefundDecision(db, "refund-request-declined", refundRequestId, gateway);
 
 // New Discussion Question: tells the course's Instructor that someone else
 // (a Student, or a Platform Admin) asked a question on one of its lessons.
@@ -328,6 +415,8 @@ export const notificationTriggers = {
   "discussion-reply": notifyDiscussionReply,
   "seat-claimed": notifySeatClaimed,
   "new-enrollment": notifyNewEnrollment,
+  "refund-request-approved": notifyRefundRequestApproved,
+  "refund-request-declined": notifyRefundRequestDeclined,
 } satisfies Record<NotificationKey, NotificationTrigger>;
 
 // ─── Notification Feed config ───

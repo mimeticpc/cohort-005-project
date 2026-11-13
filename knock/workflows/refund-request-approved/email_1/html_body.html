@@ -1,0 +1,4 @@
+Your Refund Request for <strong>{{ data.course_title | escape }}</strong> was approved
+{% render "cadence-details", amount: data.amount, purchased_on: data.purchased_on, note_label: "Note", note: data.decision_note %}
+{%- assign cta_url = vars.app_url | append: data.url %}
+{% render "cadence-cta", label: "View", url: cta_url %}
