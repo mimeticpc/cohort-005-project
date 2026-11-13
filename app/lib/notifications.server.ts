@@ -32,7 +32,7 @@ export type NotificationTrigger = (
   gateway?: KnockGateway | null
 ) => Promise<void>;
 
-function toKnockUser(user: User): KnockUser {
+export function toKnockUser(user: User): KnockUser {
   return {
     id: String(user.id),
     name: user.name,
