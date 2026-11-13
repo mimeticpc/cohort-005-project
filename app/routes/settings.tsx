@@ -17,10 +17,24 @@ import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
+import {
+  loadPreferences,
+  savePreference,
+  type PreferenceRow,
+} from "~/lib/notification-preferences.server";
+import { Switch } from "~/components/ui/switch";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
   bio: z.string().trim().optional(),
+});
+
+const PREFERENCE_INTENT = "notification-preference";
+
+const preferenceSchema = z.object({
+  key: z.string().min(1),
+  feed: z.enum(["true", "false"]),
+  email: z.enum(["true", "false"]),
 });
 
 export function meta() {
@@ -50,6 +64,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const refundRequests = listRefundRequestsForBuyer(db, currentUserId);
+  const preferences = await loadPreferences(db, currentUserId);
 
   return {
     user: {
@@ -60,6 +75,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       role: currentUser.role,
     },
     refundRequests,
+    preferences,
   };
 }
 
@@ -80,6 +96,17 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const formData = await request.formData();
+
+  if (formData.get("intent") === PREFERENCE_INTENT) {
+    const preference = parseFormData(formData, preferenceSchema);
+    if (!preference.success) return { ok: false as const };
+    const { key, feed, email } = preference.data;
+    return savePreference(db, currentUser.id, key, {
+      feed: feed === "true",
+      email: email === "true",
+    });
+  }
+
   const parsed = parseFormData(formData, settingsSchema);
 
   if (!parsed.success) {
@@ -98,7 +125,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, refundRequests } = loaderData;
+  const { user, refundRequests, preferences } = loaderData;
   const openCount = refundRequests.filter(
     (refundRequest) => refundRequest.status === RefundStatus.Open
   ).length;
@@ -188,6 +215,8 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardContent>
       </Card>
 
+      <NotificationsCard preferences={preferences} />
+
       {refundRequests.length > 0 && (
         <Card className="mt-8 max-w-md">
           <CardHeader>
@@ -234,6 +263,121 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
             ))}
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function NotificationsCard({
+  preferences,
+}: {
+  preferences: PreferenceRow[] | null;
+}) {
+  const hasEmail =
+    preferences?.some((row) => row.channels.email !== undefined) ?? false;
+  return (
+    <Card id="notifications" className="mt-8 max-w-md scroll-mt-6">
+      <CardHeader>
+        <h2 className="text-lg font-semibold">Notifications</h2>
+        <p className="text-sm text-muted-foreground">
+          Choose where each Notification reaches you.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {preferences === null ? (
+          <p className="text-sm text-muted-foreground">
+            Couldn't load your Notification Preferences. Try again later.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
+              <span className="flex-1">Notification</span>
+              <span className="w-12 text-center">Feed</span>
+              {hasEmail && <span className="w-12 text-center">Email</span>}
+            </div>
+            {preferences.map((row) => (
+              <PreferenceToggles key={row.key} row={row} hasEmail={hasEmail} />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// One row of Notification Preference toggles. Each flip saves right away;
+// the switches show the submitted values until the save settles, then the
+// saved values (or, after a failure, the stored ones again).
+function PreferenceToggles({
+  row,
+  hasEmail,
+}: {
+  row: PreferenceRow;
+  hasEmail: boolean;
+}) {
+  const fetcher = useFetcher<typeof action>({ key: `preference-${row.key}` });
+  const result =
+    fetcher.data && "ok" in fetcher.data ? fetcher.data : undefined;
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && result && !result.ok) {
+      toast.error(`Couldn't save your preference for ${row.name}.`);
+    }
+  }, [fetcher.state, result, row.name]);
+
+  const pending = fetcher.formData;
+  const current = pending
+    ? {
+        feed: pending.get("feed") === "true",
+        email: pending.get("email") === "true",
+      }
+    : result?.ok
+      ? { feed: result.channels.in_app_feed, email: result.channels.email }
+      : {
+          feed: row.channels.in_app_feed ?? false,
+          email: row.channels.email ?? false,
+        };
+  const hasEmailChannel = row.channels.email !== undefined;
+
+  function save(next: { feed: boolean; email: boolean }) {
+    fetcher.submit(
+      {
+        intent: PREFERENCE_INTENT,
+        key: row.key,
+        feed: String(next.feed),
+        // Email is forced off while the feed is off.
+        email: String(next.feed && next.email),
+      },
+      { method: "post" }
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-4">
+      <span className="flex-1 text-sm">{row.name}</span>
+      <span className="flex w-12 justify-center">
+        <Switch
+          aria-label={`${row.name} in the Notification Feed`}
+          checked={current.feed}
+          // Turning the feed on doesn't turn email on.
+          onCheckedChange={(feed) =>
+            save({ feed, email: feed ? current.email : false })
+          }
+        />
+      </span>
+      {hasEmail && (
+        <span className="flex w-12 justify-center">
+          {hasEmailChannel ? (
+            <Switch
+              aria-label={`${row.name} by email`}
+              checked={current.feed && current.email}
+              disabled={!current.feed}
+              onCheckedChange={(email) => save({ feed: current.feed, email })}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </span>
       )}
     </div>
   );
