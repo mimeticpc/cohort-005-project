@@ -81,11 +81,50 @@ It needs to be public: GitHub Actions minutes are free on public repos, and the 
 
 You don't need these yet, but you'll be asked for them along the way. Both have a free option:
 
-- **[Knock](https://knock.app/)**, a free Developer account, when you build notifications. Its keys go in `.env`, which is gitignored: `KNOCK_SECRET_API_KEY`, `KNOCK_PUBLIC_API_KEY`, `KNOCK_SIGNING_KEY`, `KNOCK_FEED_CHANNEL_ID`, and `KNOCK_SERVICE_TOKEN` for `npm run knock:sync`. The in-app feed channel's key must be `in-app-feed` (the workflows in `knock/` reference it). Without these keys the app runs and Notifications are skipped.
-  - Email goes through **[Resend](https://resend.com/)** (free account), connected in Knock as one email channel whose key must be `resend`. In your Development environment, set its From address to `onboarding@resend.dev`, set the **To override** to your own inbox (every dev email lands there, never at seed addresses), and leave reply-to empty.
-  - Under Developers → Variables, set `app_url` (e.g. `http://localhost:5173`) and `settings_url` (e.g. `http://localhost:5173/settings#notifications`) for each environment. The email layout uses them for absolute links.
-  - `npm run knock:sync` pushes the email layout and partials too. Check each email in Knock's template preview after changing `knock/`.
+- **[Knock](https://knock.app/)**, a free Developer account, when you build notifications. Email goes through **[Resend](https://resend.com/)** (free account) connected in Knock. Setup is under [Notifications (Knock + Resend)](#notifications-knock--resend).
 - **[tldraw](https://www.tldraw.com/)**, for whiteboarding your tasks. Any drawing app will do.
+
+## Notifications (Knock + Resend)
+
+Notifications and all email go through Knock (ADRs 0013–0015). The workflows, email layout, partials and default Notification Preferences live in `knock/` and `app/lib/notification-catalogue.ts`; `npm run knock:sync` pushes them. Nobody edits them in the Knock dashboard. Without the Knock keys the app still runs and Notifications are skipped.
+
+### Environment variables
+
+Keys go in `.env` (gitignored) locally, and in the host's environment in Production.
+
+| Variable | Used by | What it is |
+| --- | --- | --- |
+| `KNOCK_SECRET_API_KEY` | the app (server) | Secret API key (`sk_…`) of the Knock environment |
+| `KNOCK_PUBLIC_API_KEY` | the app (browser feed) | Public API key (`pk_…`) of the same environment |
+| `KNOCK_SIGNING_KEY` | the app (server) | Signing key (PEM) that signs user tokens for the feed |
+| `KNOCK_FEED_CHANNEL_ID` | the app | The in-app feed channel's id |
+| `KNOCK_SERVICE_TOKEN` | `npm run knock:sync` | Account service token for the Knock CLI and Management API |
+| `KNOCK_SMOKE_USER_ID` | `npm run knock:smoke` | Your own Knock user id. Use your DevUI user's id (e.g. `1`) to see the rows in the app's bell |
+| `KNOCK_SMOKE_USER_EMAIL` | `npm run knock:smoke` | Your inbox |
+| `KNOCK_SMOKE_USER_NAME` | `npm run knock:smoke` | Optional, defaults to `Smoke Tester` |
+
+### Knock and Resend setup (each environment)
+
+- Channels: the in-app feed channel's key must be `in-app-feed`, and Resend is connected as one email channel whose key must be `resend` (the workflows in `knock/` reference both).
+- Resend channel settings: in Development, From is `onboarding@resend.dev`, the **To override** is your own inbox (every dev email lands there, never at seed addresses), and reply-to is empty. In Production, From is an address on a domain verified in Resend (e.g. `Cadence <notifications@mail.example.com>`), with no To override.
+- Resend API key: create one in Resend and paste it into the Knock Resend channel for that environment. The app never sees it.
+- Under Developers → Variables, set `app_url` (e.g. `http://localhost:5173`) and `settings_url` (e.g. `http://localhost:5173/settings#notifications`). The email layout uses them for absolute links.
+
+### Development
+
+1. `npm run knock:sync` after any change to `knock/` or the catalogue. It pushes the partials, email layout and workflows, and writes the default Notification Preferences.
+2. Check each email in Knock's template preview.
+3. `npm run knock:smoke` sends all seven Notifications and the "Refund requested" receipt to `KNOCK_SMOKE_USER_ID`, with fixed sample data and `smoke:<timestamp>` idempotency keys. It skips the database and the trigger functions. It then reads your feed with a signed user token and fails unless every feed row arrived. Check the emails in your inbox and the rows in the bell by hand. It turns every Notification channel on for that user (so default-off ones arrive too) and re-identifies them with the smoke name and email; reset your preferences on `/settings` afterwards if you want. It is manual and never part of `npm run test`.
+
+### Production deploy
+
+`npm run knock:sync production` is a **required** step of every Production deploy: run it before the new app version goes live. It is safe to rerun when nothing in `knock/` or the catalogue changed. Knock only accepts changes in Development, so it pushes and commits there, promotes the commits to Production, then replaces Production's default Notification Preferences. Without it, Production triggers fail (unknown workflow, or a 422 from an outdated trigger data schema) or use stale defaults.
+
+Before the first deploy:
+
+- Set `KNOCK_SECRET_API_KEY`, `KNOCK_PUBLIC_API_KEY`, `KNOCK_SIGNING_KEY` and `KNOCK_FEED_CHANNEL_ID` from the Production environment in the host's environment.
+- Have `KNOCK_SERVICE_TOKEN` wherever `knock:sync production` runs.
+- Set up the Production channels, Resend settings and variables as above.
 
 ## Scripts
 
@@ -99,7 +138,8 @@ You don't need these yet, but you'll be asked for them along the way. Both have 
 | `npm run db:generate`        | Generate a migration from the schema         |
 | `npm run db:migrate`         | Run database migrations                      |
 | `npm run db:seed`            | Reseed the database (drops and recreates it) |
-| `npm run knock:sync [env]`   | Push `knock/` (partials, email layout, workflows) and Notification defaults to Knock (needs `KNOCK_SERVICE_TOKEN`; env defaults to `development`) |
+| `npm run knock:sync [env]`   | Push `knock/` (partials, email layout, workflows) and Notification defaults to Knock (needs `KNOCK_SERVICE_TOKEN`; env defaults to `development`). Required for Production deploys |
+| `npm run knock:smoke`        | Send every Notification and the receipt to your own Knock user and check the feed (manual, real Knock) |
 | `npm run reset <slug>`       | Reset your repo to a lesson checkpoint       |
 | `npm run cherry-pick <slug>` | Cherry-pick a lesson's solution              |
 | `npm run pull`               | Merge the course repo's latest `main` in     |
