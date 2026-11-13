@@ -259,6 +259,19 @@ describe("Refund Request declined", () => {
     });
   });
 
+  it("links a Team Licence decline to /team, where a new request is raised", async () => {
+    const teamAdmin = addTeamAdmin();
+    const id = raise(buySeats(teamAdmin.id, 2).id, teamAdmin.id);
+    decline(id, "Seats are in use.");
+    const gateway = recordingGateway();
+
+    await notifyRefundRequestDeclined(db, id, gateway);
+
+    expect(gateway.calls[0]).toMatchObject({
+      payload: { data: { url: "/team" } },
+    });
+  });
+
   it("sends nothing for a request that is still open", async () => {
     const id = raise(buyForSelf(base.user.id).id, base.user.id);
     const gateway = recordingGateway();
@@ -322,7 +335,11 @@ describe("New Open Refund Request", () => {
         payload: {
           recipients: [
             admin(),
-            { id: String(other.id), name: "Ola Admin", email: "ola@example.com" },
+            {
+              id: String(other.id),
+              name: "Ola Admin",
+              email: "ola@example.com",
+            },
           ],
           actor: student(),
           data: {

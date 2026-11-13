@@ -32,9 +32,7 @@ function textOf(html: string) {
 }
 
 function preheaderOf(html: string) {
-  const match = html.match(
-    /<div[^>]*data-preheader[^>]*>([\s\S]*?)<\/div>/
-  );
+  const match = html.match(/<div[^>]*data-preheader[^>]*>([\s\S]*?)<\/div>/);
   return match ? textOf(match[1]) : null;
 }
 
@@ -85,7 +83,9 @@ describe("Discussion Reply email", () => {
   it("shows the wordmark, the actor's initials, the sentence and the excerpt", async () => {
     const text = textOf((await renderEmail("discussion-reply", context)).html);
 
-    expect(text).toMatch(/^.*Cadence RR Rae Replier replied to your question on Closures & Scope A closure captures its scope\. See makeCounter\(\)\./);
+    expect(text).toMatch(
+      /^.*Cadence RR Rae Replier replied to your question on Closures & Scope A closure captures its scope\. See makeCounter\(\)\./
+    );
   });
 
   it("uses one initial for a one-word name and two for a longer one", async () => {
@@ -104,7 +104,9 @@ describe("Discussion Reply email", () => {
   });
 
   it("links the feed's CTA label to the absolute discussion URL", async () => {
-    const links = linksIn((await renderEmail("discussion-reply", context)).html);
+    const links = linksIn(
+      (await renderEmail("discussion-reply", context)).html
+    );
 
     expect(links).toContainEqual({
       href: "https://cadence.example/courses/typescript-basics/lessons/3#discussion",
@@ -209,7 +211,11 @@ describe("New Discussion Question email", () => {
 
 describe("Seat claimed email", () => {
   const context: EmailContext = {
-    recipient: { id: "10", name: "Bossy McBossface", email: "bossy@example.com" },
+    recipient: {
+      id: "10",
+      name: "Bossy McBossface",
+      email: "bossy@example.com",
+    },
     actor: { id: "5", name: "Emma Wilson", email: "emma@example.com" },
     data: {
       course_title: "Cooking & Knives",
@@ -223,7 +229,9 @@ describe("Seat claimed email", () => {
   it("uses the feed sentence in plain text as the subject", async () => {
     const email = await renderEmail("seat-claimed", context);
 
-    expect(email.subject).toBe("Emma Wilson claimed a Seat on Cooking & Knives");
+    expect(email.subject).toBe(
+      "Emma Wilson claimed a Seat on Cooking & Knives"
+    );
   });
 
   it("uses the Seat counts as the preheader and shows them in the body", async () => {
@@ -425,6 +433,22 @@ describe("Refund Request decision emails", () => {
       );
     });
 
+    it("sends a Team Licence buyer back to the team page to ask again", async () => {
+      const html = (
+        await renderEmail(
+          "refund-request-declined",
+          decided("Seats are in use.", "/team")
+        )
+      ).html;
+
+      expect(textOf(html)).toContain("You can ask again from your team page.");
+      expect(textOf(html)).not.toContain("course page");
+      expect(linksIn(html)).toContainEqual({
+        href: "https://cadence.example/team",
+        label: notificationCatalogue["refund-request-declined"].ctaLabel,
+      });
+    });
+
     it("links the feed's CTA label to the absolute course URL", async () => {
       const links = linksIn(
         (await renderEmail("refund-request-declined", context)).html
@@ -556,6 +580,21 @@ describe("Refund requested receipt email", () => {
       /Cadence We have your Refund Request for Rust & You .*We'll let you know when it's decided\./
     );
     expect(text).not.toMatch(/email you/i);
+  });
+
+  it("has a footer that doesn't offer control it can't give, still linking settings and saying replies aren't read", async () => {
+    const html = (await renderEmail("refund-requested", context)).html;
+    const text = textOf(html).replace(/&#39;/g, "'");
+
+    expect(text).not.toContain("Change what Cadence emails you");
+    expect(text).toContain(
+      "Cadence always sends this email because you asked for a refund."
+    );
+    expect(linksIn(html)).toContainEqual({
+      href: "https://cadence.example/settings#notifications",
+      label: "Notification settings",
+    });
+    expect(text).toContain("This address doesn't accept replies.");
   });
 
   it("shows no avatar, since the buyer caused it themselves", async () => {

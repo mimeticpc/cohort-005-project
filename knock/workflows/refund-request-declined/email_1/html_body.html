@@ -1,5 +1,10 @@
 Your Refund Request for <strong>{{ data.course_title | escape }}</strong> was declined
 {% render "cadence-details", amount: data.amount, purchased_on: data.purchased_on, note_label: "Note", note: data.decision_note %}
+{%- comment -%} A Team Licence's Refund Request is raised from /team, so the trigger sends url "/team" for one. {%- endcomment -%}
+{%- if data.url == "/team" %}
+<p style="margin:14px 0 0;font-size:14px;line-height:20px;color:#525252">You can ask again from your team page.</p>
+{%- else %}
 <p style="margin:14px 0 0;font-size:14px;line-height:20px;color:#525252">You can ask again from the course page.</p>
+{%- endif %}
 {%- assign cta_url = vars.app_url | append: data.url %}
 {% render "cadence-cta", label: "View course", url: cta_url %}

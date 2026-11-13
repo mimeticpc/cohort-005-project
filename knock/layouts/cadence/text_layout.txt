@@ -1,5 +1,9 @@
 {{ content }}
 
 --
+{% if email_only_note != blank -%}
+{{ email_only_note }} Your Notification settings cover the other emails: {{ vars.settings_url }}
+{%- else -%}
 Change what Cadence emails you in your Notification settings: {{ vars.settings_url }}
+{%- endif %}
 This address doesn't accept replies.

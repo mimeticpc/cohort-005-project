@@ -42,6 +42,7 @@ import {
 
 type Db = BetterSQLite3Database<typeof schema>;
 type User = typeof users.$inferSelect;
+type WorkflowKey = NotificationKey | EmailOnlyKey;
 
 export type NotificationTrigger = (
   db: Db,
@@ -58,11 +59,40 @@ export function toKnockUser(user: User): KnockUser {
   };
 }
 
+function logTriggerFailure(
+  key: WorkflowKey,
+  idempotency: string,
+  error: unknown
+) {
+  console.error(
+    `[notifications] trigger failed workflow=${key} idempotencyKey=${idempotency}:`,
+    error
+  );
+}
+
+// Runs a trigger's lookups and send. Never throws: any error is logged with
+// the workflow and idempotency key.
+async function guarded(
+  key: WorkflowKey,
+  rowId: number,
+  run: () => Promise<void>
+) {
+  try {
+    await run();
+  } catch (error) {
+    logTriggerFailure(key, idempotencyKey(key, rowId), error);
+  }
+}
+
+function userById(db: Db, id: number) {
+  return db.select().from(users).where(eq(users.id, id)).get();
+}
+
 // Triggers a workflow, or does nothing when Knock isn't configured. Never
 // throws: errors are logged with the workflow and idempotency key.
 async function deliver(
   gateway: KnockGateway | null,
-  key: NotificationKey | EmailOnlyKey,
+  key: WorkflowKey,
   idempotency: string,
   payload: TriggerPayload
 ) {
@@ -76,10 +106,7 @@ async function deliver(
   try {
     await gateway.trigger(key, payload, idempotency);
   } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=${key} idempotencyKey=${idempotency}:`,
-      error
-    );
+    logTriggerFailure(key, idempotency, error);
   }
 }
 
@@ -107,12 +134,12 @@ export function lessonDiscussionUrl(courseSlug: string, lessonId: number) {
 
 // Discussion Reply: tells the Discussion Question's author that someone
 // else replied. Later repliers in the thread are not notified (no follow).
-export const notifyDiscussionReply: NotificationTrigger = async (
+export const notifyDiscussionReply: NotificationTrigger = (
   db,
   commentId,
   gateway = defaultKnockGateway()
-) => {
-  try {
+) =>
+  guarded("discussion-reply", commentId, async () => {
     const reply = db
       .select()
       .from(comments)
@@ -136,14 +163,8 @@ export const notifyDiscussionReply: NotificationTrigger = async (
       .innerJoin(courses, eq(modules.courseId, courses.id))
       .where(eq(lessons.id, reply.lessonId))
       .get();
-    const actor = db
-      .select()
-      .from(users)
-      .where(eq(users.id, reply.userId))
-      .get();
-    const asker = question
-      ? db.select().from(users).where(eq(users.id, question.userId)).get()
-      : undefined;
+    const actor = userById(db, reply.userId);
+    const asker = question ? userById(db, question.userId) : undefined;
     if (!place || !actor || !asker) return;
 
     await send(gateway, "discussion-reply", reply.id, actor, [asker], {
@@ -152,13 +173,18 @@ export const notifyDiscussionReply: NotificationTrigger = async (
       excerpt: commentExcerpt(reply.body),
       url: lessonDiscussionUrl(place.courseSlug, reply.lessonId),
     });
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=discussion-reply idempotencyKey=${idempotencyKey("discussion-reply", commentId)}:`,
-      error
-    );
-  }
-};
+  });
+
+// A Team Licence is a Purchase with Seats. Its Refund Requests are raised
+// from /team; an Individual Purchase's from the course page or /settings.
+function isTeamLicence(db: Db, purchaseId: number) {
+  const seat = db
+    .select({ id: coupons.id })
+    .from(coupons)
+    .where(eq(coupons.purchaseId, purchaseId))
+    .get();
+  return seat !== undefined;
+}
 
 // "Oct 3, 2026", in the server's local calendar like the refund window.
 function purchaseDate(iso: string) {
@@ -172,19 +198,22 @@ function purchaseDate(iso: string) {
 // Refund Request approved / declined: tells the buyer (purchases.userId —
 // the Student, or the Team Admin who bought a Team Licence) that a Platform
 // Admin decided their Refund Request. Does nothing unless the request was
-// decided that way, so a stray call can't announce the wrong decision.
-async function notifyRefundDecision(
+// decided that way, so a stray call can't announce the wrong decision. A
+// decline links to where a new request can be raised: /team for a Team
+// Licence, the course page otherwise.
+function notifyRefundDecision(
   db: Db,
   key: "refund-request-approved" | "refund-request-declined",
   refundRequestId: number,
   gateway: KnockGateway | null
 ) {
-  try {
+  return guarded(key, refundRequestId, async () => {
     const row = db
       .select({
         status: refunds.status,
         decisionNote: refunds.decisionNote,
         decidedBy: refunds.resolvedByUserId,
+        purchaseId: purchases.id,
         buyerId: purchases.userId,
         amountPaid: purchases.amountPaid,
         purchasedAt: purchases.createdAt,
@@ -200,16 +229,8 @@ async function notifyRefundDecision(
     const expected = approved ? RefundStatus.Approved : RefundStatus.Declined;
     if (!row || row.status !== expected || row.decidedBy === null) return;
 
-    const actor = db
-      .select()
-      .from(users)
-      .where(eq(users.id, row.decidedBy))
-      .get();
-    const buyer = db
-      .select()
-      .from(users)
-      .where(eq(users.id, row.buyerId))
-      .get();
+    const actor = userById(db, row.decidedBy);
+    const buyer = userById(db, row.buyerId);
     if (!actor || !buyer) return;
 
     await send(gateway, key, refundRequestId, actor, [buyer], {
@@ -217,14 +238,13 @@ async function notifyRefundDecision(
       amount: formatPrice(row.amountPaid),
       purchased_on: purchaseDate(row.purchasedAt),
       decision_note: row.decisionNote ?? "",
-      url: approved ? "/dashboard" : `/courses/${row.courseSlug}`,
+      url: approved
+        ? "/dashboard"
+        : isTeamLicence(db, row.purchaseId)
+          ? "/team"
+          : `/courses/${row.courseSlug}`,
     });
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=${key} idempotencyKey=${idempotencyKey(key, refundRequestId)}:`,
-      error
-    );
-  }
+  });
 }
 
 // Call after approveRefundRequest succeeds, outside its transaction.
@@ -260,7 +280,7 @@ function refundRequestDetails(db: Db, refundRequestId: number) {
     .where(eq(refunds.id, refundRequestId))
     .get();
   if (!row) return undefined;
-  const buyer = db.select().from(users).where(eq(users.id, row.buyerId)).get();
+  const buyer = userById(db, row.buyerId);
   if (!buyer) return undefined;
   return {
     ...row,
@@ -278,12 +298,12 @@ function refundRequestDetails(db: Db, refundRequestId: number) {
 // Platform Admin can buy too) that a Refund Request was raised. Sent whatever
 // the request's status is now, so a row never changes after a decision.
 // Call after raiseRefundRequest succeeds.
-export const notifyRefundRequestOpened: NotificationTrigger = async (
+export const notifyRefundRequestOpened: NotificationTrigger = (
   db,
   refundRequestId,
   gateway = defaultKnockGateway()
-) => {
-  try {
+) =>
+  guarded("refund-request-opened", refundRequestId, async () => {
     const request = refundRequestDetails(db, refundRequestId);
     if (!request) return;
 
@@ -301,45 +321,35 @@ export const notifyRefundRequestOpened: NotificationTrigger = async (
       platformAdmins,
       { ...request.data, url: "/admin/refunds" }
     );
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=refund-request-opened idempotencyKey=${idempotencyKey("refund-request-opened", refundRequestId)}:`,
-      error
-    );
-  }
-};
+  });
 
 // "Refund requested" receipt: an email-only workflow (ADR 0015) that emails
 // the buyer every time they raise a Refund Request. No actor (they caused it
 // themselves), no feed entry, no Notification Preference. "View refund
 // request" goes where the buyer raised it: /team for a Team Licence,
 // /settings otherwise. Call after raiseRefundRequest succeeds.
-export async function sendRefundRequestedReceipt(
+export function sendRefundRequestedReceipt(
   db: Db,
   refundRequestId: number,
   gateway: KnockGateway | null = defaultKnockGateway()
 ) {
-  const idempotency = idempotencyKey("refund-requested", refundRequestId);
-  try {
+  return guarded("refund-requested", refundRequestId, async () => {
     const request = refundRequestDetails(db, refundRequestId);
     if (!request) return;
 
-    const seat = db
-      .select({ id: coupons.id })
-      .from(coupons)
-      .where(eq(coupons.purchaseId, request.purchaseId))
-      .get();
-
-    await deliver(gateway, "refund-requested", idempotency, {
-      recipients: [toKnockUser(request.buyer)],
-      data: { ...request.data, url: seat ? "/team" : "/settings" },
-    });
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=refund-requested idempotencyKey=${idempotency}:`,
-      error
+    await deliver(
+      gateway,
+      "refund-requested",
+      idempotencyKey("refund-requested", refundRequestId),
+      {
+        recipients: [toKnockUser(request.buyer)],
+        data: {
+          ...request.data,
+          url: isTeamLicence(db, request.purchaseId) ? "/team" : "/settings",
+        },
+      }
     );
-  }
+  });
 }
 
 // A raised Refund Request fires the New Open Refund Request Notification and
@@ -355,12 +365,12 @@ export async function notifyRefundRequestRaised(
 
 // New Discussion Question: tells the course's Instructor that someone else
 // (a Student, or a Platform Admin) asked a question on one of its lessons.
-export const notifyDiscussionQuestion: NotificationTrigger = async (
+export const notifyDiscussionQuestion: NotificationTrigger = (
   db,
   commentId,
   gateway = defaultKnockGateway()
-) => {
-  try {
+) =>
+  guarded("discussion-question", commentId, async () => {
     const question = db
       .select()
       .from(comments)
@@ -379,14 +389,8 @@ export const notifyDiscussionQuestion: NotificationTrigger = async (
       .innerJoin(courses, eq(modules.courseId, courses.id))
       .where(eq(lessons.id, question.lessonId))
       .get();
-    const actor = db
-      .select()
-      .from(users)
-      .where(eq(users.id, question.userId))
-      .get();
-    const instructor = place
-      ? db.select().from(users).where(eq(users.id, place.instructorId)).get()
-      : undefined;
+    const actor = userById(db, question.userId);
+    const instructor = place ? userById(db, place.instructorId) : undefined;
     if (!place || !actor || !instructor) return;
 
     await send(
@@ -402,23 +406,17 @@ export const notifyDiscussionQuestion: NotificationTrigger = async (
         url: "/instructor/questions",
       }
     );
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=discussion-question idempotencyKey=${idempotencyKey("discussion-question", commentId)}:`,
-      error
-    );
-  }
-};
+  });
 
 // Seat claimed: tells every Team Admin of the Seat's team, except the
 // claimer, that a Student claimed a Seat on their Team Licence. Seats count
 // the Team Licence's Seats, leaving out refunded Unclaimed Seats (as /team does).
-export const notifySeatClaimed: NotificationTrigger = async (
+export const notifySeatClaimed: NotificationTrigger = (
   db,
   couponId,
   gateway = defaultKnockGateway()
-) => {
-  try {
+) =>
+  guarded("seat-claimed", couponId, async () => {
     const seat = db
       .select()
       .from(coupons)
@@ -426,11 +424,7 @@ export const notifySeatClaimed: NotificationTrigger = async (
       .get();
     if (!seat || seat.redeemedByUserId === null) return;
 
-    const actor = db
-      .select()
-      .from(users)
-      .where(eq(users.id, seat.redeemedByUserId))
-      .get();
+    const actor = userById(db, seat.redeemedByUserId);
     const course = db
       .select({ title: courses.title })
       .from(courses)
@@ -466,23 +460,17 @@ export const notifySeatClaimed: NotificationTrigger = async (
       seats_total: String(seats.length),
       url: "/team",
     });
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=seat-claimed idempotencyKey=${idempotencyKey("seat-claimed", couponId)}:`,
-      error
-    );
-  }
-};
+  });
 
 // New Enrollment: tells the course's Instructor about each new Enrollment,
 // from an Individual Purchase or a Claimed Seat (a Lapsed Student enrolling
 // again is a new Enrollment). Buying a Team Licence enrolls no one.
-export const notifyNewEnrollment: NotificationTrigger = async (
+export const notifyNewEnrollment: NotificationTrigger = (
   db,
   enrollmentId,
   gateway = defaultKnockGateway()
-) => {
-  try {
+) =>
+  guarded("new-enrollment", enrollmentId, async () => {
     const enrollment = db
       .select()
       .from(enrollments)
@@ -495,14 +483,8 @@ export const notifyNewEnrollment: NotificationTrigger = async (
       .from(courses)
       .where(eq(courses.id, enrollment.courseId))
       .get();
-    const actor = db
-      .select()
-      .from(users)
-      .where(eq(users.id, enrollment.userId))
-      .get();
-    const instructor = course
-      ? db.select().from(users).where(eq(users.id, course.instructorId)).get()
-      : undefined;
+    const actor = userById(db, enrollment.userId);
+    const instructor = course ? userById(db, course.instructorId) : undefined;
     if (!course || !actor || !instructor) return;
 
     await send(gateway, "new-enrollment", enrollment.id, actor, [instructor], {
@@ -510,13 +492,7 @@ export const notifyNewEnrollment: NotificationTrigger = async (
       course_id: String(course.id),
       url: `/instructor/${course.id}/students`,
     });
-  } catch (error) {
-    console.error(
-      `[notifications] trigger failed workflow=new-enrollment idempotencyKey=${idempotencyKey("new-enrollment", enrollmentId)}:`,
-      error
-    );
-  }
-};
+  });
 
 // A coupon redeem claims a Seat and creates an Enrollment, so it fires both.
 export async function notifyCouponRedeemed(

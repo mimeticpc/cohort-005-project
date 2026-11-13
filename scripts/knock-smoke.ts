@@ -72,17 +72,15 @@ type FeedEntry = { source: { key: string }; inserted_at: string };
 
 const token = await gateway.signUserToken(userId);
 const expected = new Set<string>(Object.keys(notificationCatalogue));
+// Built here, where env and userId are already narrowed by the checks above.
+const feedUrl = `${KNOCK_API}/users/${encodeURIComponent(userId)}/feeds/${encodeURIComponent(env.feedChannelId)}?page_size=50`;
+const feedHeaders = {
+  Authorization: `Bearer ${env.publicApiKey}`,
+  "X-Knock-User-Token": token,
+};
 
 async function fetchFeedKeys(): Promise<Set<string>> {
-  const response = await fetch(
-    `${KNOCK_API}/users/${encodeURIComponent(userId!)}/feeds/${encodeURIComponent(env!.feedChannelId)}?page_size=50`,
-    {
-      headers: {
-        Authorization: `Bearer ${env!.publicApiKey}`,
-        "X-Knock-User-Token": token,
-      },
-    }
-  );
+  const response = await fetch(feedUrl, { headers: feedHeaders });
   if (!response.ok) {
     fail(
       `Feed read with the signed user token failed: ${response.status} ${await response.text()}`

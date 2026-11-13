@@ -1,10 +1,11 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { UserRole } from "~/db/schema";
 import {
   emailOnlyWorkflows,
   environmentDefaults,
   idempotencyKey,
+  isNotificationKey,
   notificationCatalogue,
   visibleNotifications,
   type NotificationEntry,
@@ -34,6 +35,20 @@ describe("notification catalogue", () => {
     }
   });
 
+  it("ships to the browser without the database schema's runtime code", () => {
+    const source = readFileSync(
+      new URL("./notification-catalogue.ts", import.meta.url),
+      "utf8"
+    );
+    const schemaImports = source.match(
+      /^import[^;]*from\s+["']~\/db\/schema["']/gm
+    );
+
+    for (const statement of schemaImports ?? []) {
+      expect(statement).toMatch(/^import type /);
+    }
+  });
+
   it("keys each entry by its workflow key", () => {
     for (const [key, entry] of Object.entries(notificationCatalogue)) {
       expect(entry.key).toBe(key);
@@ -60,7 +75,9 @@ describe("notification catalogue", () => {
 
     it("is shown only to Instructors", () => {
       const keysFor = (role: UserRole) =>
-        visibleNotifications({ role, isTeamAdmin: false }).map((e) => e.key);
+        visibleNotifications({ role, isTeamAdmin: false, isBuyer: false }).map(
+          (e) => e.key
+        );
 
       expect(keysFor(UserRole.Instructor)).toContain("discussion-question");
       expect(keysFor(UserRole.Student)).not.toContain("discussion-question");
@@ -80,9 +97,9 @@ describe("notification catalogue", () => {
 
     it("targets the lesson discussion URL sent in the trigger data", () => {
       const entry = notificationCatalogue["discussion-reply"];
-      expect(
-        entry.target({ url: "/courses/intro/lessons/3#discussion" })
-      ).toBe("/courses/intro/lessons/3#discussion");
+      expect(entry.target({ url: "/courses/intro/lessons/3#discussion" })).toBe(
+        "/courses/intro/lessons/3#discussion"
+      );
     });
 
     it("has no target when the trigger data carries no in-app URL", () => {
@@ -99,7 +116,11 @@ describe("notification catalogue", () => {
         UserRole.Admin,
       ]) {
         expect(
-          visibleNotifications({ role, isTeamAdmin: false }).map((e) => e.key)
+          visibleNotifications({
+            role,
+            isTeamAdmin: false,
+            isBuyer: false,
+          }).map((e) => e.key)
         ).toContain("discussion-reply");
       }
     });
@@ -120,7 +141,9 @@ describe("Seat claimed", () => {
 
   it("is shown only to Team Admins", () => {
     const keysFor = (role: UserRole, isTeamAdmin: boolean) =>
-      visibleNotifications({ role, isTeamAdmin }).map((e) => e.key);
+      visibleNotifications({ role, isTeamAdmin, isBuyer: false }).map(
+        (e) => e.key
+      );
 
     expect(keysFor(UserRole.Student, true)).toContain("seat-claimed");
     expect(keysFor(UserRole.Student, false)).not.toContain("seat-claimed");
@@ -147,7 +170,9 @@ describe("New Enrollment", () => {
 
   it("is shown only to Instructors", () => {
     const keysFor = (role: UserRole) =>
-      visibleNotifications({ role, isTeamAdmin: true }).map((e) => e.key);
+      visibleNotifications({ role, isTeamAdmin: true, isBuyer: false }).map(
+        (e) => e.key
+      );
 
     expect(keysFor(UserRole.Instructor)).toContain("new-enrollment");
     expect(keysFor(UserRole.Student)).not.toContain("new-enrollment");
@@ -180,20 +205,31 @@ describe("Refund Request approved / declined", () => {
     expect(declined.target({ url: "https://evil.example" })).toBeNull();
   });
 
-  it("are shown to Students, including Team Admins, and no other role", () => {
-    const keysFor = (role: UserRole, isTeamAdmin = false) =>
-      visibleNotifications({ role, isTeamAdmin }).map((e) => e.key);
+  it("are shown to Students, including Team Admins", () => {
+    const keysFor = (isTeamAdmin: boolean) =>
+      visibleNotifications({
+        role: UserRole.Student,
+        isTeamAdmin,
+        isBuyer: false,
+      }).map((e) => e.key);
 
-    for (const keys of [
-      keysFor(UserRole.Student),
-      keysFor(UserRole.Student, true),
-    ]) {
+    for (const keys of [keysFor(false), keysFor(true)]) {
       expect(keys).toContain("refund-request-approved");
       expect(keys).toContain("refund-request-declined");
     }
+  });
+
+  it("are shown to an Instructor or Platform Admin only when they have bought something", () => {
+    const keysFor = (role: UserRole, isBuyer: boolean) =>
+      visibleNotifications({ role, isTeamAdmin: false, isBuyer }).map(
+        (e) => e.key
+      );
+
     for (const role of [UserRole.Instructor, UserRole.Admin]) {
-      expect(keysFor(role)).not.toContain("refund-request-approved");
-      expect(keysFor(role)).not.toContain("refund-request-declined");
+      expect(keysFor(role, true)).toContain("refund-request-approved");
+      expect(keysFor(role, true)).toContain("refund-request-declined");
+      expect(keysFor(role, false)).not.toContain("refund-request-approved");
+      expect(keysFor(role, false)).not.toContain("refund-request-declined");
     }
   });
 });
@@ -213,15 +249,15 @@ describe("New Open Refund Request", () => {
 
   it("is shown only to Platform Admins", () => {
     const keysFor = (role: UserRole, isTeamAdmin = false) =>
-      visibleNotifications({ role, isTeamAdmin }).map((e) => e.key);
+      visibleNotifications({ role, isTeamAdmin, isBuyer: false }).map(
+        (e) => e.key
+      );
 
     expect(keysFor(UserRole.Admin)).toContain("refund-request-opened");
     expect(keysFor(UserRole.Student, true)).not.toContain(
       "refund-request-opened"
     );
-    expect(keysFor(UserRole.Instructor)).not.toContain(
-      "refund-request-opened"
-    );
+    expect(keysFor(UserRole.Instructor)).not.toContain("refund-request-opened");
   });
 });
 
@@ -299,9 +335,21 @@ describe("knock/workflows", () => {
     expect(emailStep?.template.settings?.layout_key).toBe(EMAIL_LAYOUT_KEY);
     expect(
       existsSync(
-        new URL(`../../knock/layouts/${EMAIL_LAYOUT_KEY}/layout.json`, import.meta.url)
+        new URL(
+          `../../knock/layouts/${EMAIL_LAYOUT_KEY}/layout.json`,
+          import.meta.url
+        )
       )
     ).toBe(true);
+  });
+});
+
+describe("isNotificationKey", () => {
+  it("accepts a catalogue key and nothing else", () => {
+    expect(isNotificationKey("discussion-reply")).toBe(true);
+    expect(isNotificationKey("refund-requested")).toBe(false);
+    expect(isNotificationKey("toString")).toBe(false);
+    expect(isNotificationKey(7)).toBe(false);
   });
 });
 

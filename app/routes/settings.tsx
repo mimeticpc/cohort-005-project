@@ -23,6 +23,10 @@ import {
   type PreferenceRow,
 } from "~/lib/notification-preferences.server";
 import { Switch } from "~/components/ui/switch";
+import {
+  isNotificationKey,
+  type NotificationKey,
+} from "~/lib/notification-catalogue";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
@@ -32,7 +36,7 @@ const settingsSchema = z.object({
 const PREFERENCE_INTENT = "notification-preference";
 
 const preferenceSchema = z.object({
-  key: z.string().min(1),
+  key: z.custom<NotificationKey>(isNotificationKey),
   feed: z.enum(["true", "false"]),
   email: z.enum(["true", "false"]),
 });

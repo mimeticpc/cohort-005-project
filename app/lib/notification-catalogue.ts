@@ -1,4 +1,4 @@
-import { UserRole } from "~/db/schema";
+import type { UserRole } from "~/db/schema";
 
 // ─── Notification catalogue ───
 // The only source of truth for which Notifications Cadence sends (ADR 0013).
@@ -13,7 +13,13 @@ import { UserRole } from "~/db/schema";
 // sends on; its value is the default when the person has no stored entry.
 export type ChannelType = "in_app_feed" | "email";
 
-export type Viewer = { role: UserRole; isTeamAdmin: boolean };
+export type Viewer = {
+  role: UserRole;
+  // A Team Admin of a team that has a Team Licence.
+  isTeamAdmin: boolean;
+  // Has at least one Purchase, so can raise a Refund Request.
+  isBuyer: boolean;
+};
 
 // A feed row's trigger `data`, as Knock hands it back to the browser.
 export type NotificationData = Record<string, unknown>;
@@ -33,12 +39,19 @@ export type NotificationEntry<Key extends string = string> = {
   visibleTo: (viewer: Viewer) => boolean;
 };
 
+// Roles are compared as their string values, through a type-only import, so
+// this module stays free of the schema's runtime code (it ships to the
+// browser).
+const hasRole = (viewer: Viewer, role: `${UserRole}`) =>
+  `${viewer.role}` === role;
+
 const everyone = () => true;
-// Buyers who can raise a Refund Request: Students (and the Team Admins
-// among them, who buy Team Licences). Compared as a string so this module
-// stays free of the schema's runtime code (it ships to the browser).
-const buyers = (viewer: Viewer) => `${viewer.role}` === "student";
-const platformAdmins = (viewer: Viewer) => `${viewer.role}` === "admin";
+const instructors = (viewer: Viewer) => hasRole(viewer, "instructor");
+const platformAdmins = (viewer: Viewer) => hasRole(viewer, "admin");
+const teamAdmins = (viewer: Viewer) => viewer.isTeamAdmin;
+// Who can raise a Refund Request: Students (and the Team Admins among them,
+// who buy Team Licences), and anyone else who has bought something.
+const buyers = (viewer: Viewer) => hasRole(viewer, "student") || viewer.isBuyer;
 
 // Only same-origin paths: "/x", never "//host" or "https://…".
 function appPath(value: unknown): string | null {
@@ -64,7 +77,7 @@ export const notificationCatalogue = {
     ctaLabel: "Answer",
     target: (data) => appPath(data.url),
     idempotencyKeyPrefix: "discussion-question",
-    visibleTo: (viewer) => viewer.role === UserRole.Instructor,
+    visibleTo: instructors,
   },
   "discussion-reply": {
     key: "discussion-reply",
@@ -84,7 +97,7 @@ export const notificationCatalogue = {
     ctaLabel: "View team",
     target: (data) => appPath(data.url),
     idempotencyKeyPrefix: "seat-claimed",
-    visibleTo: (viewer) => viewer.isTeamAdmin,
+    visibleTo: teamAdmins,
   },
   "new-enrollment": {
     key: "new-enrollment",
@@ -94,7 +107,7 @@ export const notificationCatalogue = {
     ctaLabel: "See students",
     target: (data) => instructorStudentsPath(data.course_id),
     idempotencyKeyPrefix: "enrollment-created",
-    visibleTo: (viewer) => viewer.role === UserRole.Instructor,
+    visibleTo: instructors,
   },
   // A Refund Request is decided once, so approved and declined share the
   // idempotency-key prefix. They are separate workflows so each has its own
@@ -133,6 +146,13 @@ export const notificationCatalogue = {
 
 export type NotificationKey = keyof typeof notificationCatalogue;
 
+// For parsing a key from untrusted input (e.g. the /settings form).
+export function isNotificationKey(value: unknown): value is NotificationKey {
+  return (
+    typeof value === "string" && Object.hasOwn(notificationCatalogue, value)
+  );
+}
+
 // ─── Email-only workflows (ADR 0015) ───
 // Email the recipient caused themselves. Not Notifications: no feed step, no
 // category, no Notification Preference, so never in the catalogue above and
@@ -165,15 +185,14 @@ export function visibleNotifications(viewer: Viewer) {
   return entries.filter((entry) => entry.visibleTo(viewer));
 }
 
+// Every workflow Cadence triggers, Notification or email-only, by its key.
+const workflows = { ...notificationCatalogue, ...emailOnlyWorkflows };
+
 export function idempotencyKey(
   key: NotificationKey | EmailOnlyKey,
   rowId: number
 ) {
-  const entry =
-    key in emailOnlyWorkflows
-      ? emailOnlyWorkflows[key as EmailOnlyKey]
-      : notificationCatalogue[key as NotificationKey];
-  return `${entry.idempotencyKeyPrefix}:${rowId}`;
+  return `${workflows[key].idempotencyKeyPrefix}:${rowId}`;
 }
 
 // The Knock environment's default PreferenceSet. Written in full by

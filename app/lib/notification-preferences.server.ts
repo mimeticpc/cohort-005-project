@@ -1,7 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "~/db/schema";
-import { teamMembers, TeamMemberRole, users } from "~/db/schema";
+import {
+  coupons,
+  purchases,
+  teamMembers,
+  TeamMemberRole,
+  users,
+} from "~/db/schema";
 import {
   defaultKnockGateway,
   type ChannelTypePreferences,
@@ -73,14 +79,17 @@ export async function loadPreferences(
   }));
 }
 
-// A Team Admin is a team_members row, not a users.role.
+// A Team Admin is a team_members row, not a users.role; it counts only on a
+// team that has a Team Licence (a Purchase with Seats). A buyer is anyone
+// with a Purchase, whatever their role.
 export function notificationViewer(
   db: Db,
   user: Pick<typeof users.$inferSelect, "id" | "role">
 ): Viewer {
-  const adminRow = db
+  const teamLicenceAdminRow = db
     .select({ id: teamMembers.id })
     .from(teamMembers)
+    .innerJoin(coupons, eq(coupons.teamId, teamMembers.teamId))
     .where(
       and(
         eq(teamMembers.userId, user.id),
@@ -88,7 +97,16 @@ export function notificationViewer(
       )
     )
     .get();
-  return { role: user.role, isTeamAdmin: adminRow !== undefined };
+  const purchase = db
+    .select({ id: purchases.id })
+    .from(purchases)
+    .where(eq(purchases.userId, user.id))
+    .get();
+  return {
+    role: user.role,
+    isTeamAdmin: teamLicenceAdminRow !== undefined,
+    isBuyer: purchase !== undefined,
+  };
 }
 
 export type PreferenceValues = { feed: boolean; email: boolean };
@@ -103,7 +121,7 @@ export type SavePreferenceResult =
 export async function savePreference(
   db: Db,
   userId: number,
-  key: string,
+  key: NotificationKey,
   values: PreferenceValues,
   gateway: KnockGateway | null = defaultKnockGateway()
 ): Promise<SavePreferenceResult> {
@@ -115,7 +133,10 @@ export async function savePreference(
   );
   if (!visible) return { ok: false };
 
-  const channels = { in_app_feed: values.feed, email: values.feed && values.email };
+  const channels = {
+    in_app_feed: values.feed,
+    email: values.feed && values.email,
+  };
   try {
     await gateway.identify(toKnockUser(user));
     await gateway.mergePreferences(String(user.id), {

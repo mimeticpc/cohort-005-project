@@ -5,6 +5,9 @@
       preheader;
     - html_body: the card's right column: the sentence, then a details
       partial (cadence-excerpt or cadence-details), then cadence-cta.
+    - for an email-only workflow (no Notification Preference), a capture
+      of email_only_note in pre_content: why it always sends. The footer
+      then shows it instead of offering control the settings can't give.
   The layout adds the wordmark, the card with the actor's initials avatar,
   and the footer. Needs the environment variables app_url and settings_url.
 {%- endcomment -%}
@@ -49,7 +52,11 @@
             </tr>
             <tr>
               <td style="padding:20px 4px;font-size:12px;line-height:18px;color:#71717a">
+                {%- if email_only_note != blank %}
+                {{ email_only_note | escape }} Your <a href="{{ vars.settings_url }}" style="color:#52525b">Notification settings</a> cover the other emails.
+                {%- else %}
                 Change what Cadence emails you in your <a href="{{ vars.settings_url }}" style="color:#52525b">Notification settings</a>.
+                {%- endif %}
                 This address doesn't accept replies.
               </td>
             </tr>
