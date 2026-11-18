@@ -3,6 +3,7 @@ import { createTestDb, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { UserRole } from "~/db/schema";
 import {
+  deleteNote,
   getNote,
   isBookmarked,
   listBookmarks,
@@ -130,6 +131,35 @@ describe("saving a Note", () => {
     expect(getNote(db, base.user.id, lessonIds[0])).toEqual({
       body: "something",
       updatedAt: NOW.toISOString(),
+    });
+  });
+});
+
+describe("deleting a Note", () => {
+  it("removes the Student's Note and leaves other Students' Notes alone", () => {
+    const other = addStudent("Priya");
+    saveNote(db, base.user.id, lessonIds[0], "mine", NOW);
+    saveNote(db, other.id, lessonIds[0], "theirs", NOW);
+
+    expect(deleteNote(db, base.user.id, lessonIds[0])).toBe(true);
+
+    expect(getNote(db, base.user.id, lessonIds[0])).toBeUndefined();
+    expect(getNote(db, other.id, lessonIds[0])?.body).toBe("theirs");
+  });
+
+  it("reports nothing deleted when there was no Note", () => {
+    expect(deleteNote(db, base.user.id, lessonIds[0])).toBe(false);
+  });
+
+  it("lets the Student write a fresh Note afterwards", () => {
+    saveNote(db, base.user.id, lessonIds[0], "old", NOW);
+    deleteNote(db, base.user.id, lessonIds[0]);
+
+    saveNote(db, base.user.id, lessonIds[0], "new", minutesAfter(1));
+
+    expect(getNote(db, base.user.id, lessonIds[0])).toEqual({
+      body: "new",
+      updatedAt: minutesAfter(1).toISOString(),
     });
   });
 });

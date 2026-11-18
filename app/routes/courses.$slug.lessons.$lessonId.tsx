@@ -12,6 +12,7 @@ import {
 } from "~/lib/comments.server";
 import { defaultNotifications } from "~/lib/notifications.server";
 import {
+  deleteNote,
   getNote,
   isBookmarked,
   saveNote,
@@ -916,7 +917,11 @@ export async function action({ params, request }: Route.ActionArgs) {
 
   // Bookmark and Note intents re-check content access here, like the comment
   // intents: loader guards don't protect actions.
-  if (intent === "toggle-bookmark" || intent === "save-note") {
+  if (
+    intent === "toggle-bookmark" ||
+    intent === "save-note" ||
+    intent === "delete-note"
+  ) {
     await requireContentAccess(request, course.id);
 
     // Scope the lesson to this course so access to one course can't be used
@@ -932,6 +937,11 @@ export async function action({ params, request }: Route.ActionArgs) {
         ok: true,
         bookmarked: toggleBookmark(db, currentUserId, lessonId, new Date()),
       };
+    }
+
+    if (intent === "delete-note") {
+      deleteNote(db, currentUserId, lessonId);
+      return { ok: true };
     }
 
     const parsed = parseFormData(formData, saveNoteSchema);
@@ -1344,7 +1354,8 @@ function LessonNote({
   note: { body: string; updatedAt: string } | null;
 }) {
   const fetcher = useFetcher<{ ok: boolean; error?: string }>();
-  const isSaving = fetcher.state !== "idle";
+  const busy = fetcher.state !== "idle";
+  const pendingIntent = fetcher.formData?.get("intent");
   const error = fetcher.data?.error;
 
   return (
@@ -1356,8 +1367,9 @@ function LessonNote({
         </div>
 
         <fetcher.Form method="post" className="space-y-3">
-          <input type="hidden" name="intent" value="save-note" />
+          {/* Remount when the Note goes away so a deleted body doesn't linger. */}
           <Textarea
+            key={note ? "note" : "empty"}
             name="body"
             rows={6}
             defaultValue={note?.body ?? ""}
@@ -1365,9 +1377,32 @@ function LessonNote({
             className="resize-y"
           />
           <div className="flex items-center gap-3">
-            <Button type="submit" size="sm" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save note"}
+            <Button
+              type="submit"
+              name="intent"
+              value="save-note"
+              size="sm"
+              disabled={busy}
+            >
+              {pendingIntent === "save-note" ? "Saving..." : "Save note"}
             </Button>
+            {note && (
+              <Button
+                type="submit"
+                name="intent"
+                value="delete-note"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={(event) => {
+                  if (!window.confirm("Delete this note? This can't be undone.")) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                {pendingIntent === "delete-note" ? "Deleting..." : "Delete note"}
+              </Button>
+            )}
             {error && <span className="text-sm text-red-600">{error}</span>}
             {!error && note && (
               <span

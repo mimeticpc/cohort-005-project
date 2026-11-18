@@ -96,6 +96,16 @@ export function saveNote(
   return { ok: true, note: saved };
 }
 
+/** Removes the Student's Note on a Lesson. Returns whether there was one. */
+export function deleteNote(db: Db, userId: number, lessonId: number): boolean {
+  const removed = db
+    .delete(notes)
+    .where(and(eq(notes.userId, userId), eq(notes.lessonId, lessonId)))
+    .returning({ id: notes.id })
+    .all();
+  return removed.length > 0;
+}
+
 const lessonRef = {
   lessonId: lessons.id,
   lessonTitle: lessons.title,
